@@ -671,6 +671,7 @@ export default function App() {
                     <View style={styles.progressContainer}>
                         <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
                             <CircularProgress
+                                key={`main-ring-${goalMs}`} // Force re-render on goal change
                                 value={Math.min(displayMs, goalMs)}
                                 maxValue={goalMs} // Dynamic goal in ms
                                 radius={RING_RADIUS} // Custom Radius based on Screen Width
@@ -689,13 +690,14 @@ export default function App() {
                             {displayMs > goalMs && (
                                 <View style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center' }]}>
                                     <CircularProgress
+                                        key={`overtime-ring-${goalMs}`}
                                         value={displayMs - goalMs}
                                         maxValue={goalMs} // Wrap around relative to goal? Or just fill?
                                         radius={RING_RADIUS}
                                         duration={0} // Instant update for overlay
                                         progressValueColor={'transparent'}
                                         showProgressValue={false}
-                                        activeStrokeColor={'#2196F3'} // Blue for Overtime
+                                        activeStrokeColor={'#AB47BC'} // Purple for Overtime
                                         inActiveStrokeColor={'transparent'}
                                         title={''}
                                         titleColor={'transparent'}
