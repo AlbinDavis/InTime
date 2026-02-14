@@ -566,7 +566,7 @@ export default function App() {
                     {date.day}
                 </Text>
                 {hasData && (
-                    <Text style={{ fontSize: 9, color: h >= 8 ? '#4CAF50' : '#FF9800', fontWeight: 'bold' }}>
+                    <Text style={{ fontSize: 9, color: (selectedDate === dateStr) ? '#9C27B0' : (h >= 8 ? '#4CAF50' : '#FF9800'), fontWeight: 'bold' }}>
                         {displayTime}
                     </Text>
                 )}
@@ -636,17 +636,17 @@ export default function App() {
                             flexDirection: 'row',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            backgroundColor: isDark ? 'rgba(33, 150, 243, 0.15)' : 'rgba(33, 150, 243, 0.1)',
+                            backgroundColor: isDark ? 'rgba(156, 39, 176, 0.15)' : 'rgba(156, 39, 176, 0.1)',
                             paddingVertical: 8,
                             paddingHorizontal: 16,
                             marginHorizontal: 20,
                             marginBottom: 10,
                             borderRadius: 10,
                             borderWidth: 1,
-                            borderColor: 'rgba(33, 150, 243, 0.3)'
+                            borderColor: 'rgba(156, 39, 176, 0.3)'
                         }}>
-                            <Ionicons name="calendar-outline" size={16} color="#2196F3" />
-                            <Text style={{ color: '#2196F3', fontSize: 13, fontWeight: '600', marginLeft: 6, flex: 1 }}>
+                            <Ionicons name="calendar-outline" size={16} color="#9C27B0" />
+                            <Text style={{ color: '#9C27B0', fontSize: 13, fontWeight: '600', marginLeft: 6, flex: 1 }}>
                                 Viewing: {moment(selectedDate).format('ddd, MMM D, YYYY')}
                             </Text>
                             <TouchableOpacity onPress={() => {
@@ -655,7 +655,7 @@ export default function App() {
                                 setSelectedDateSessions([]);
                                 setSelectedWeekData([]);
                             }}>
-                                <Ionicons name="close-circle" size={20} color="#2196F3" />
+                                <Ionicons name="close-circle" size={20} color="#9C27B0" />
                             </TouchableOpacity>
                         </View>
                     )}
@@ -670,7 +670,7 @@ export default function App() {
                                 duration={100} // Fast animation
                                 progressValueColor={'transparent'}
                                 showProgressValue={false}
-                                activeStrokeColor={isViewingHistory ? '#2196F3' : (isGoalReached ? '#4CAF50' : '#FF9800')}
+                                activeStrokeColor={isViewingHistory ? '#9C27B0' : (isGoalReached ? '#4CAF50' : '#FF9800')}
                                 inActiveStrokeColor={isDark ? '#333' : '#E0E0E0'}
                                 title={''}
                                 titleColor={'transparent'}
@@ -761,7 +761,7 @@ export default function App() {
                             </View>
                         </View>
 
-                        {isGoalReached && (
+                        {isGoalReached && !isViewingHistory && (
                             <View style={styles.goalBadge}>
                                 <Text style={styles.goalText}>GOAL REACHED! 🎉</Text>
                             </View>
@@ -855,7 +855,7 @@ export default function App() {
                     {displayWeekData.length > 0 && (
                         <View style={[styles.sectionContainer, { backgroundColor: colors.card, marginBottom: 15, paddingVertical: 15 }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, paddingHorizontal: 20 }}>
-                                <Ionicons name="bar-chart-outline" size={20} color={colors.accent} />
+                                <Ionicons name="bar-chart-outline" size={20} color={isViewingHistory ? '#9C27B0' : colors.accent} />
                                 <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 8 }]}>
                                     {isViewingHistory ? `Week of ${moment(selectedDate).startOf('isoWeek').format('MMM D')}` : 'This Week (Weekdays)'}
                                 </Text>
@@ -875,7 +875,7 @@ export default function App() {
                                                 <Text style={{
                                                     fontSize: 10,
                                                     fontWeight: '600',
-                                                    color: item.hours > 0 ? (isViewingHistory ? '#2196F3' : '#4CAF50') : colors.subText,
+                                                    color: item.hours > 0 ? (isViewingHistory ? '#9C27B0' : '#4CAF50') : colors.subText,
                                                     marginBottom: 4
                                                 }}>
                                                     {item.hours > 0 ? `${item.hours}h` : '-'}
@@ -887,16 +887,16 @@ export default function App() {
                                                     height: `${Math.max(height, 5)}%`,
                                                     backgroundColor: isToday
                                                         ? (isDark
-                                                            ? (isViewingHistory ? 'rgba(33, 150, 243, 0.5)' : 'rgba(76, 175, 80, 0.5)')
-                                                            : (isViewingHistory ? 'rgba(33, 150, 243, 0.4)' : 'rgba(76, 175, 80, 0.4)'))
+                                                            ? (isViewingHistory ? 'rgba(156, 39, 176, 0.5)' : 'rgba(76, 175, 80, 0.5)')
+                                                            : (isViewingHistory ? 'rgba(156, 39, 176, 0.4)' : 'rgba(76, 175, 80, 0.4)'))
                                                         : (isDark
-                                                            ? (isViewingHistory ? 'rgba(33, 150, 243, 0.25)' : 'rgba(76, 175, 80, 0.25)')
-                                                            : (isViewingHistory ? 'rgba(33, 150, 243, 0.2)' : 'rgba(76, 175, 80, 0.2)')),
+                                                            ? (isViewingHistory ? 'rgba(156, 39, 176, 0.25)' : 'rgba(76, 175, 80, 0.25)')
+                                                            : (isViewingHistory ? 'rgba(156, 39, 176, 0.2)' : 'rgba(76, 175, 80, 0.2)')),
                                                     borderRadius: 6,
                                                     borderWidth: isToday ? 2 : 1,
                                                     borderColor: isToday
-                                                        ? (isViewingHistory ? '#2196F3' : '#4CAF50')
-                                                        : (isViewingHistory ? 'rgba(33, 150, 243, 0.3)' : 'rgba(76, 175, 80, 0.3)'),
+                                                        ? (isViewingHistory ? '#9C27B0' : '#4CAF50')
+                                                        : (isViewingHistory ? 'rgba(156, 39, 176, 0.3)' : 'rgba(76, 175, 80, 0.3)'),
                                                     minHeight: 5,
                                                     position: 'relative',
                                                     overflow: 'hidden'
@@ -918,7 +918,7 @@ export default function App() {
                                                 <Text style={{
                                                     fontSize: 11,
                                                     fontWeight: isToday ? '700' : '500',
-                                                    color: isToday ? (isViewingHistory ? '#2196F3' : '#4CAF50') : colors.subText,
+                                                    color: isToday ? (isViewingHistory ? '#9C27B0' : '#4CAF50') : colors.subText,
                                                     marginTop: 6
                                                 }}>
                                                     {item.day}
@@ -935,22 +935,22 @@ export default function App() {
                                     paddingVertical: 10,
                                     paddingHorizontal: 10,
                                     backgroundColor: isDark
-                                        ? (isViewingHistory ? 'rgba(33, 150, 243, 0.08)' : 'rgba(76, 175, 80, 0.08)')
-                                        : (isViewingHistory ? 'rgba(33, 150, 243, 0.05)' : 'rgba(76, 175, 80, 0.05)'),
+                                        ? (isViewingHistory ? 'rgba(156, 39, 176, 0.08)' : 'rgba(76, 175, 80, 0.08)')
+                                        : (isViewingHistory ? 'rgba(156, 39, 176, 0.05)' : 'rgba(76, 175, 80, 0.05)'),
                                     borderRadius: 10,
                                     borderWidth: 1,
-                                    borderColor: isViewingHistory ? 'rgba(33, 150, 243, 0.2)' : 'rgba(76, 175, 80, 0.2)'
+                                    borderColor: isViewingHistory ? 'rgba(156, 39, 176, 0.2)' : 'rgba(76, 175, 80, 0.2)'
                                 }}>
                                     <View style={{ alignItems: 'center' }}>
                                         <Text style={{ fontSize: 11, color: colors.subText }}>Total</Text>
-                                        <Text style={{ fontSize: 16, fontWeight: '700', color: isViewingHistory ? '#2196F3' : '#4CAF50' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '700', color: isViewingHistory ? '#9C27B0' : '#4CAF50' }}>
                                             {displayWeekData.reduce((sum, d) => sum + parseFloat(d.hours), 0).toFixed(1)}h
                                         </Text>
                                     </View>
                                     <View style={{ width: 1, backgroundColor: colors.divider }} />
                                     <View style={{ alignItems: 'center' }}>
                                         <Text style={{ fontSize: 11, color: colors.subText }}>Average</Text>
-                                        <Text style={{ fontSize: 16, fontWeight: '700', color: isViewingHistory ? '#2196F3' : '#4CAF50' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '700', color: isViewingHistory ? '#9C27B0' : '#4CAF50' }}>
                                             {(() => {
                                                 const activeDays = displayWeekData.filter(d => parseFloat(d.hours) > 0);
                                                 const total = activeDays.reduce((sum, d) => sum + parseFloat(d.hours), 0);
@@ -968,7 +968,7 @@ export default function App() {
                         <View style={[styles.sectionContainer, { backgroundColor: colors.card, marginBottom: 15, paddingVertical: 20 }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingHorizontal: 20 }}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                    <Ionicons name="time-outline" size={22} color={colors.accent} />
+                                    <Ionicons name="time-outline" size={22} color={isViewingHistory ? '#9C27B0' : colors.accent} />
                                     <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 8 }]}>
                                         {isViewingHistory ? `Sessions — ${moment(selectedDate).format('MMM D')}` : "Today's Sessions"}
                                     </Text>
@@ -1011,10 +1011,10 @@ export default function App() {
                                                     padding: 10,
                                                     borderRadius: 10,
                                                     backgroundColor: isDark
-                                                        ? (isViewingHistory ? 'rgba(33, 150, 243, 0.08)' : 'rgba(76, 175, 80, 0.08)')
-                                                        : (isViewingHistory ? 'rgba(33, 150, 243, 0.05)' : 'rgba(76, 175, 80, 0.05)'),
+                                                        ? (isViewingHistory ? 'rgba(156, 39, 176, 0.08)' : 'rgba(76, 175, 80, 0.08)')
+                                                        : (isViewingHistory ? 'rgba(156, 39, 176, 0.05)' : 'rgba(76, 175, 80, 0.05)'),
                                                     borderLeftWidth: 4,
-                                                    borderLeftColor: isViewingHistory ? '#2196F3' : (isOngoing ? '#FF9800' : '#4CAF50'),
+                                                    borderLeftColor: isViewingHistory ? '#9C27B0' : (isOngoing ? '#FF9800' : '#4CAF50'),
                                                     flexDirection: 'row',
                                                     alignItems: 'center',
                                                     justifyContent: 'space-between'
@@ -1025,7 +1025,7 @@ export default function App() {
                                                         width: 8,
                                                         height: 8,
                                                         borderRadius: 4,
-                                                        backgroundColor: isViewingHistory ? '#2196F3' : (isOngoing ? '#FF9800' : '#4CAF50'),
+                                                        backgroundColor: isViewingHistory ? '#9C27B0' : (isOngoing ? '#FF9800' : '#4CAF50'),
                                                         marginRight: 8
                                                     }} />
                                                     <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
@@ -1039,17 +1039,17 @@ export default function App() {
 
                                                 <View style={{
                                                     backgroundColor: isDark
-                                                        ? (isViewingHistory ? 'rgba(33, 150, 243, 0.15)' : 'rgba(76, 175, 80, 0.15)')
-                                                        : (isViewingHistory ? 'rgba(33, 150, 243, 0.12)' : 'rgba(76, 175, 80, 0.12)'),
+                                                        ? (isViewingHistory ? 'rgba(156, 39, 176, 0.15)' : 'rgba(76, 175, 80, 0.15)')
+                                                        : (isViewingHistory ? 'rgba(156, 39, 176, 0.12)' : 'rgba(76, 175, 80, 0.12)'),
                                                     paddingHorizontal: 10,
                                                     paddingVertical: 5,
                                                     borderRadius: 6,
                                                     borderWidth: 1,
-                                                    borderColor: isViewingHistory ? 'rgba(33, 150, 243, 0.25)' : 'rgba(76, 175, 80, 0.25)',
+                                                    borderColor: isViewingHistory ? 'rgba(156, 39, 176, 0.25)' : 'rgba(76, 175, 80, 0.25)',
                                                     minWidth: 60,
                                                     alignItems: 'center'
                                                 }}>
-                                                    <Text style={{ fontSize: 12, fontWeight: '700', color: isViewingHistory ? '#2196F3' : '#4CAF50' }}>
+                                                    <Text style={{ fontSize: 12, fontWeight: '700', color: isViewingHistory ? '#9C27B0' : '#4CAF50' }}>
                                                         {durationText}
                                                     </Text>
                                                 </View>
@@ -1084,7 +1084,7 @@ export default function App() {
                                 </TouchableOpacity>
                             )}
                             enableSwipeMonths={true}
-                            markedDates={selectedDate ? { [selectedDate]: { selected: true, selectedColor: '#2196F3' } } : {}}
+                            markedDates={selectedDate ? { [selectedDate]: { selected: true, selectedColor: '#9C27B0' } } : {}}
                         />
                     </View>
 
