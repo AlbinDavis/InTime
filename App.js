@@ -670,7 +670,7 @@ export default function App() {
                                 duration={100} // Fast animation
                                 progressValueColor={'transparent'}
                                 showProgressValue={false}
-                                activeStrokeColor={isViewingHistory ? '#2196F3' : (isGoalReached ? '#FFD700' : '#FF9800')}
+                                activeStrokeColor={isViewingHistory ? '#2196F3' : (isGoalReached ? '#FFD700' : '#4CAF50')}
                                 inActiveStrokeColor={isDark ? '#333' : '#E0E0E0'}
                                 title={''}
                                 titleColor={'transparent'}
@@ -1064,12 +1064,12 @@ export default function App() {
                     <View style={[styles.sectionContainer, { backgroundColor: colors.card, paddingVertical: 10 }]}>
                         <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 15, marginTop: 15 }]}>History</Text>
                         <Calendar
-                            key={isDark ? 'dark' : 'light'}
+                            key={`${isDark ? 'dark' : 'light'}-${isViewingHistory ? 'history' : 'live'}`}
                             theme={{
                                 backgroundColor: colors.card,
                                 calendarBackground: colors.card,
                                 textSectionTitleColor: colors.subText,
-                                selectedDayBackgroundColor: colors.accent,
+                                selectedDayBackgroundColor: isViewingHistory ? '#2196F3' : colors.accent,
                                 selectedDayTextColor: '#ffffff',
                                 todayTextColor: colors.accent,
                                 dayTextColor: colors.text,
