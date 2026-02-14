@@ -174,9 +174,6 @@ export default function App() {
         setGoalHoursState(storedGoal);
 
         await refreshTotals(); // Load all data including weekly histogram and sessions
-
-        // TESTING: Generate mock weekly data for histogram
-        generateMockWeeklyData();
     };
 
     const scheduleDailyReminder = async () => {
@@ -402,29 +399,6 @@ export default function App() {
         setSelectedWeekData(weekData);
     };
 
-    // TESTING: Generate mock weekly data for histogram
-    const generateMockWeeklyData = async () => {
-        const mockHistory = {};
-        const today = moment();
-
-        // Generate random data for last 7 weekdays
-        for (let i = 0; i < 10; i++) {
-            const date = today.clone().subtract(i, 'days');
-            const dayOfWeek = date.day();
-            // Skip weekends
-            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                const dateKey = date.format('YYYY-MM-DD');
-                // Random hours between 4-9 hours
-                const hours = 4 + Math.random() * 5;
-                const duration = hours * 60 * 60 * 1000;
-                mockHistory[dateKey] = duration;
-            }
-        }
-
-        // Save mock history
-        await AsyncStorage.setItem('HISTORY', JSON.stringify(mockHistory));
-        await refreshTotals();
-    };
 
 
     const tick = async () => {
