@@ -774,6 +774,17 @@ export default function App() {
                                 <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 8 }]}>
                                     This Week (Weekdays)
                                 </Text>
+                                {/* Weekly Average (Non-Zero Days) */}
+                                {(() => {
+                                    const activeDays = weeklyData.filter(d => parseFloat(d.hours) > 0);
+                                    const totalHours = activeDays.reduce((sum, d) => sum + parseFloat(d.hours), 0);
+                                    const average = activeDays.length > 0 ? (totalHours / activeDays.length).toFixed(1) : "0.0";
+                                    return (
+                                        <Text style={{ color: colors.subText, fontSize: 13, marginLeft: 'auto' }}>
+                                            Avg: {average}h
+                                        </Text>
+                                    );
+                                })()}
                             </View>
 
                             <View style={{ paddingHorizontal: 20 }}>
