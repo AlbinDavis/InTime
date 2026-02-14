@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Text, View, TouchableOpacity, ScrollView, Alert, RefreshControl, useColorScheme, StatusBar, Platform, Linking, Modal, TextInput, Dimensions, SafeAreaView, AppState } from 'react-native';
+import { Text, View, TouchableOpacity, ScrollView, Alert, RefreshControl, useColorScheme, StatusBar, Platform, Linking, Modal, TextInput, Dimensions, SafeAreaView, AppState, StyleSheet } from 'react-native';
 import * as Network from 'expo-network';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
@@ -674,16 +674,35 @@ export default function App() {
                                 value={Math.min(displayMs, goalMs)}
                                 maxValue={goalMs} // Dynamic goal in ms
                                 radius={RING_RADIUS} // Custom Radius based on Screen Width
-                                duration={100} // Fast animation
+                                duration={500} // Smoother animation
                                 progressValueColor={'transparent'}
                                 showProgressValue={false}
-                                activeStrokeColor={isViewingHistory ? '#FF9800' : (isGoalReached ? '#FFD700' : '#4CAF50')}
+                                activeStrokeColor={isViewingHistory ? '#2196F3' : '#4CAF50'} // Blue for History, Green for Goal
                                 inActiveStrokeColor={isDark ? '#333' : '#E0E0E0'}
                                 title={''}
                                 titleColor={'transparent'}
                                 titleStyle={{ opacity: 0 }}
-                                titleFontSize={RING_RADIUS * 0.3} // Scale font if it were used
+                                titleFontSize={RING_RADIUS * 0.3}
                             />
+
+                            {/* Overtime Ring - Layered on top */}
+                            {!isViewingHistory && displayMs > goalMs && (
+                                <View style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center' }]}>
+                                    <CircularProgress
+                                        value={displayMs - goalMs}
+                                        maxValue={goalMs} // Wrap around relative to goal? Or just fill?
+                                        radius={RING_RADIUS}
+                                        duration={0} // Instant update for overlay
+                                        progressValueColor={'transparent'}
+                                        showProgressValue={false}
+                                        activeStrokeColor={'#FF5252'} // Red for Overtime
+                                        inActiveStrokeColor={'transparent'}
+                                        title={''}
+                                        titleColor={'transparent'}
+                                        titleStyle={{ opacity: 0 }}
+                                    />
+                                </View>
+                            )}
                             {/* Custom Overlay for Stable Text */}
                             <View style={{
                                 position: 'absolute',
