@@ -233,5 +233,26 @@ export const StorageService = {
         } catch (e) {
             return [];
         }
+    },
+
+    // --- Date-parameterized lookups (for historical view) ---
+    getSessionsForDate: async (dateKey) => {
+        try {
+            const sessionsJson = await AsyncStorage.getItem(KEYS.SESSIONS);
+            const allSessions = sessionsJson ? JSON.parse(sessionsJson) : {};
+            return allSessions[dateKey] || [];
+        } catch (e) {
+            return [];
+        }
+    },
+
+    getDurationForDate: async (dateKey) => {
+        try {
+            const historyJson = await AsyncStorage.getItem(KEYS.HISTORY);
+            const history = historyJson ? JSON.parse(historyJson) : {};
+            return history[dateKey] || 0;
+        } catch (e) {
+            return 0;
+        }
     }
 };
