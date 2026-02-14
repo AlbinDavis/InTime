@@ -678,7 +678,7 @@ export default function App() {
                                 duration={500} // Smoother animation
                                 progressValueColor={'transparent'}
                                 showProgressValue={false}
-                                activeStrokeColor={displayMs < goalMs ? '#FFD700' : '#4CAF50'} // Gold if under goal, Green if reached
+                                activeStrokeColor={displayMs < goalMs ? '#2196F3' : '#4CAF50'} // Blue if under goal, Green if reached
                                 inActiveStrokeColor={isDark ? '#333' : '#E0E0E0'}
                                 title={''}
                                 titleColor={'transparent'}
@@ -697,7 +697,7 @@ export default function App() {
                                         duration={0} // Instant update for overlay
                                         progressValueColor={'transparent'}
                                         showProgressValue={false}
-                                        activeStrokeColor={'#AB47BC'} // Purple for Overtime
+                                        activeStrokeColor={'#FFD700'} // Gold for Overtime
                                         inActiveStrokeColor={'transparent'}
                                         title={''}
                                         titleColor={'transparent'}
