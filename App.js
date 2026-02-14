@@ -858,7 +858,11 @@ export default function App() {
                                     <View style={{ alignItems: 'center' }}>
                                         <Text style={{ fontSize: 11, color: colors.subText }}>Average</Text>
                                         <Text style={{ fontSize: 16, fontWeight: '700', color: '#4CAF50' }}>
-                                            {(weeklyData.reduce((sum, d) => sum + parseFloat(d.hours), 0) / weeklyData.length).toFixed(1)}h
+                                            {(() => {
+                                                const activeDays = weeklyData.filter(d => parseFloat(d.hours) > 0);
+                                                const total = activeDays.reduce((sum, d) => sum + parseFloat(d.hours), 0);
+                                                return activeDays.length > 0 ? (total / activeDays.length).toFixed(1) : '0.0';
+                                            })()}h
                                         </Text>
                                     </View>
                                 </View>
