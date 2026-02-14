@@ -1,0 +1,1025 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import { Text, View, TouchableOpacity, ScrollView, Alert, RefreshControl, useColorScheme, StatusBar, Platform, Linking, Modal, TextInput, Dimensions, SafeAreaView, AppState } from 'react-native';
+import * as Network from 'expo-network';
+import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
+import * as Notifications from 'expo-notifications';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import moment from 'moment';
+import CircularProgress from 'react-native-circular-progress-indicator';
+import { Calendar } from 'react-native-calendars';
+import { Ionicons } from '@expo/vector-icons';
+import { StorageService } from './src/services/StorageService';
+import { NetworkService } from './src/services/NetworkService';
+import WidgetService from './src/services/WidgetService';
+import { styles } from './src/styles/AppStyles';
+
+const BACKGROUND_TASK_NAME = 'BACKGROUND_WIFI_MONITOR';
+
+const { width } = Dimensions.get('window');
+// Dynamic Ring Size: 35% of screen width (e.g. 130px on iPhone 12, 112px on SE)
+const RING_RADIUS = width * 0.35;
+
+// Configure Notifications
+Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+    }),
+});
+
+TaskManager.defineTask(BACKGROUND_TASK_NAME, async ({ data, error }) => {
+    if (error) return;
+    if (data) {
+        try {
+            const targetSSID = await StorageService.getTargetSSID();
+            const storedSSID = await StorageService.getRawSSID();
+            const isManualPaused = await StorageService.getManualPause(); // Read Pause State
+
+            if (!targetSSID || isManualPaused) return; // Prevent BG from starting session if paused
+
+            // Import NetworkService dynamically
+            const { NetworkService } = await import('./src/services/NetworkService');
+
+            const isWifi = await NetworkService.isConnectedToWifi();
+
+            let isOffice = false;
+            if (isWifi) {
+                if (storedSSID) {
+                    // Use SSID matching
+                    isOffice = await NetworkService.isConnectedToTargetNetwork(storedSSID);
+                } else {
+                    // No SSID stored (legacy or iOS), use generic Wi-Fi detection
+                    isOffice = true;
+                }
+            }
+
+            if (isOffice) {
+                const currentSession = await StorageService.getCurrentSession();
+                if (currentSession) {
+                    await StorageService.updateSessionHeartbeat();
+                } else {
+                    await StorageService.startSession();
+                }
+            } else {
+                await StorageService.endSession();
+            }
+        } catch (err) {
+            console.error("Bg task error", err);
+        }
+    }
+});
+
+export default function App() {
+    const colorScheme = useColorScheme();
+    const isDark = colorScheme === 'dark';
+
+    const colors = {
+        bg: isDark ? '#121212' : '#F7F8FA',
+        card: isDark ? '#1E1E1E' : '#FFFFFF',
+        text: isDark ? '#E0E0E0' : '#1a1a1a',
+        subText: isDark ? '#A0A0A0' : '#888888',
+        accent: '#4CAF50',
+        calendarBg: isDark ? '#1E1E1E' : '#FFFFFF',
+        calendarText: isDark ? '#E0E0E0' : '#2D4150',
+        inputBg: isDark ? '#2C2C2C' : '#F0F0F0',
+        divider: isDark ? '#333' : '#eee',
+    };
+
+    const [targetSSID, setTargetSSID] = useState(null);
+    const [currentSSIDName, setCurrentSSIDName] = useState(null);
+    const [isConnectedToOffice, setIsConnectedToOffice] = useState(false);
+    const [isOnTargetNetwork, setIsOnTargetNetwork] = useState(false); // NEW: Track if on correct network
+    const [sessionDuration, setSessionDuration] = useState(0);
+    const [todayTotal, setTodayTotal] = useState(0);
+    const [history, setHistory] = useState({});
+    const [todaySessions, setTodaySessions] = useState([]);
+    const [weeklyData, setWeeklyData] = useState([]);
+    const [refreshing, setRefreshing] = useState(false);
+    const [isManualStop, setIsManualStop] = useState(false); // NEW: Manual Stop State
+
+    // Modal State
+    const [modalVisible, setModalVisible] = useState(false);
+    const [wifiNameInput, setWifiNameInput] = useState('');
+    const [capturedSSID, setCapturedSSID] = useState(null); // Captured SSID
+    const [modalTitle, setModalTitle] = useState('Rename Wi-Fi Name'); // Dynamic Title
+
+    // Success Modal State
+    const [successVisible, setSuccessVisible] = useState(false);
+    const [successData, setSuccessData] = useState({ title: '', message: '' });
+
+    const handleSuccessClose = () => {
+        setSuccessVisible(false);
+    };
+
+    const showSuccess = (title, message) => {
+        setSuccessData({ title, message });
+        setSuccessVisible(true);
+    };
+
+    useEffect(() => {
+        init();
+        const interval = setInterval(tick, 1000); // 1s tick
+
+        // Listen for App Resume to re-check location services
+        const subscription = AppState.addEventListener('change', async (nextAppState) => {
+            if (nextAppState === 'active') {
+                console.log('App resumed - checking location services...');
+                const { ForegroundService } = await import('./src/services/ForegroundService');
+                // Always check permissions/enablement on resume, even if service is running
+                // ensureLocationServicesEnabled() is called inside startService(), so we don't need to call it twice.
+                await ForegroundService.startService();
+            }
+        });
+
+        return () => {
+            clearInterval(interval);
+            subscription.remove();
+        };
+    }, []);
+
+    const init = async () => {
+        // Start persistent foreground service
+        const { ForegroundService } = await import('./src/services/ForegroundService');
+        await ForegroundService.startService();
+        // Permission dialogs are handled automatically by the system
+
+        await Notifications.requestPermissionsAsync();
+        scheduleDailyReminder();
+
+        const storedSSID = await StorageService.getTargetSSID();
+        setTargetSSID(storedSSID);
+        await refreshTotals(); // Load all data including weekly histogram and sessions
+
+        // TESTING: Generate mock weekly data for histogram
+        generateMockWeeklyData();
+    };
+
+    const scheduleDailyReminder = async () => {
+        await Notifications.cancelAllScheduledNotificationsAsync();
+        await Notifications.scheduleNotificationAsync({
+            content: {
+                title: "Good Morning! ☀️",
+                body: "Enable Wi-Fi to start tracking your office hours.",
+            },
+            trigger: {
+                hour: 9,
+                minute: 0,
+                repeats: true,
+            },
+        });
+    };
+
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await refreshTotals(); // Use refreshTotals to get all data
+        setRefreshing(false);
+    }, []);
+
+    const checkNetworkAndSession = async () => {
+        try {
+            const isWifi = await NetworkService.isConnectedToWifi();
+
+            let newIsConnected = false;
+            let newSSIDName = "Not Connected";
+
+            if (isWifi) {
+                newSSIDName = "Wi-Fi Connected";
+            }
+
+            const storedTarget = await StorageService.getTargetSSID();
+            const storedSSID = await StorageService.getRawSSID();
+
+            // READ PERSISTENT STATE TO FIX CLOSURE STALENESS
+            let isPaused = await StorageService.getManualPause();
+
+            // Auto-Reset Manual Stop if disconnected
+            if (!isWifi && isPaused) {
+                await StorageService.setManualPause(false);
+                isPaused = false;
+            }
+
+            // Sync local state for UI (so button looks right)
+            setIsManualStop(isPaused);
+
+            const session = await StorageService.getCurrentSession();
+
+            // ZOMBIE CHECK (Keep this)
+            if (session) {
+                const timeSinceHeartbeat = Date.now() - session.lastActive;
+                if (timeSinceHeartbeat > 20 * 60 * 1000) {
+                    console.log("Found stale session, cleaning up...");
+                    await StorageService.endSession();
+                    setSessionDuration(0);
+                    setIsConnectedToOffice(false);
+                    setCurrentSSIDName("Not Connected");
+                    refreshTotals();
+                    return;
+                }
+            }
+
+            // SSID-SPECIFIC MATCHING
+            let isOnTargetNetwork = false;
+            if (isWifi && storedSSID) {
+                // Use SSID matching
+                isOnTargetNetwork = await NetworkService.isConnectedToTargetNetwork(storedSSID);
+
+                if (!isOnTargetNetwork) {
+                    // Connected to Wi-Fi but wrong network
+                    const currentSSID = await NetworkService.getCurrentSSID();
+                    if (currentSSID) {
+                        newSSIDName = `Non-Office Network (${currentSSID})`;
+                    } else {
+                        newSSIDName = "Non-Office Network";
+                    }
+                }
+            } else if (isWifi && !storedSSID) {
+                // No SSID stored (legacy or iOS), use generic Wi-Fi detection
+                isOnTargetNetwork = true;
+            }
+
+            // Logic: If OnTargetNetwork + TargetSet + NotPaused -> TRACKING
+            const shouldBeTracking = isOnTargetNetwork && storedTarget && !isPaused;
+
+            if (session && !shouldBeTracking) {
+                // Must Stop
+                await StorageService.endSession();
+                setSessionDuration(0);
+                setIsConnectedToOffice(false);
+                setCurrentSSIDName(isWifi ? (isOnTargetNetwork ? "Wi-Fi Connected (Idle)" : newSSIDName) : "Not Connected");
+                refreshTotals();
+                return;
+            }
+
+            if (shouldBeTracking && !session) {
+                // Must Start
+                newSSIDName = storedTarget; // Display Friendly Name
+                await StorageService.startSession();
+                newIsConnected = true;
+            } else if (session) {
+                // Keep Tracking
+                newIsConnected = true;
+                newSSIDName = storedTarget;
+
+                setSessionDuration(Date.now() - session.start);
+
+                if (Date.now() - session.lastActive > 5000) {
+                    await StorageService.updateSessionHeartbeat();
+                }
+            } else {
+                setSessionDuration(0);
+            }
+
+            if (!storedTarget) {
+                newSSIDName = isWifi ? "Wi-Fi Connected (Not Configured)" : "Not Connected";
+            } else if (isWifi && isPaused) {
+                newSSIDName = "Paused (Manual)";
+            }
+
+            // Commit final state
+            setIsConnectedToOffice(newIsConnected);
+            setCurrentSSIDName(newSSIDName);
+            setTargetSSID(storedTarget);
+            setIsOnTargetNetwork(isOnTargetNetwork);
+
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const refreshTotals = async () => {
+        const newTotal = await StorageService.getTodayDuration();
+        setTodayTotal(newTotal);
+        const newHistory = await StorageService.getHistory();
+        setHistory(newHistory);
+        const sessions = await StorageService.getTodaySessions();
+        setTodaySessions(sessions);
+
+        // Calculate weekly data (weekdays only)
+        const weekly = [];
+        const today = moment();
+        for (let i = 6; i >= 0; i--) {
+            const date = today.clone().subtract(i, 'days');
+            const dayOfWeek = date.day();
+            // Skip Saturday (6) and Sunday (0)
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                const dateKey = date.format('YYYY-MM-DD');
+                const duration = newHistory[dateKey] || 0;
+                weekly.push({
+                    day: date.format('ddd'),
+                    date: dateKey,
+                    duration: duration,
+                    hours: (duration / 1000 / 60 / 60).toFixed(1)
+                });
+            }
+        }
+        setWeeklyData(weekly);
+    };
+
+
+    // TESTING: Generate mock weekly data for histogram
+    const generateMockWeeklyData = async () => {
+        const mockHistory = {};
+        const today = moment();
+
+        // Generate random data for last 7 weekdays
+        for (let i = 0; i < 10; i++) {
+            const date = today.clone().subtract(i, 'days');
+            const dayOfWeek = date.day();
+            // Skip weekends
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                const dateKey = date.format('YYYY-MM-DD');
+                // Random hours between 4-9 hours
+                const hours = 4 + Math.random() * 5;
+                const duration = hours * 60 * 60 * 1000;
+                mockHistory[dateKey] = duration;
+            }
+        }
+
+        // Save mock history
+        await AsyncStorage.setItem('HISTORY', JSON.stringify(mockHistory));
+        await refreshTotals();
+    };
+
+
+    const tick = async () => {
+        await checkNetworkAndSession();
+    };
+
+    // Generic open modal function
+    const handleOpenModal = (isInitialSetup) => {
+        setWifiNameInput("");
+        setModalTitle(isInitialSetup ? "Set Name for Office Wi-Fi" : "Rename Wi-Fi Name");
+        setModalVisible(true);
+    };
+
+    const handleInitialSetup = async () => {
+        const isWifi = await NetworkService.isConnectedToWifi();
+        if (!isWifi) {
+            Alert.alert("Not Connected", "Please connect to your Office Wi-Fi first, then tap settings.");
+            return;
+        }
+
+        // Capture current SSID
+        const currentSSID = await NetworkService.getCurrentSSID();
+        setCapturedSSID(currentSSID);
+
+        // Open modal
+        handleOpenModal(true);
+    };
+
+    const handleRenameSetup = () => {
+        handleOpenModal(false); // Rename Context
+    };
+
+    const handleResetWiFi = () => {
+        Alert.alert(
+            "Reset Wi-Fi Configuration",
+            "This will clear your current office Wi-Fi settings and all tracking history. You'll need to set it up again. Continue?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Reset",
+                    style: "destructive",
+                    onPress: async () => {
+                        // Clear all Wi-Fi related storage
+                        await StorageService.clearTargetSSID();
+                        // End any active session
+                        await StorageService.endSession();
+                        // Clear all tracking history
+                        await StorageService.clearHistory();
+                        // Reset UI state
+                        setTargetSSID(null);
+                        setCurrentSSIDName("Not Connected");
+                        setIsConnectedToOffice(false);
+                        setSessionDuration(0);
+                        setTodayTotal(0);
+                        // Refresh display
+                        await checkNetworkAndSession();
+                        await refreshTotals();
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleSaveWifiName = async () => {
+        if (!wifiNameInput.trim()) {
+            Alert.alert("Invalid Name", "Please enter a name for your office network (e.g. 'Work', 'HQ').");
+            return;
+        }
+
+        // Save friendly name and captured SSID
+        await StorageService.setTargetSSID(wifiNameInput.trim(), capturedSSID);
+
+        setTargetSSID(wifiNameInput.trim());
+        setModalVisible(false);
+
+        if (capturedSSID) {
+            showSuccess(
+                "All Set!",
+                `Office Wi-Fi set to "${wifiNameInput.trim()}"\n\nSSID: ${capturedSSID}\n\nTracking will now automatically start when you connect to this network.`
+            );
+        } else {
+            showSuccess(
+                "All Set!",
+                `Office Wi-Fi set to "${wifiNameInput.trim()}"\n\nNote: SSID detection not available. Will track on any Wi-Fi network.`
+            );
+        }
+
+        await checkNetworkAndSession();
+    };
+
+    const openWifiSettings = () => {
+        if (Platform.OS === 'android') {
+            Linking.sendIntent("android.settings.WIFI_SETTINGS");
+        } else {
+            Linking.openURL("App-Prefs:root=WIFI");
+        }
+    };
+
+    // Export and Battery functions kept in code but removed from UI as requested
+    const openBatterySettings = () => {
+        if (Platform.OS === 'android') {
+            Linking.sendIntent("android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS");
+        } else {
+            Alert.alert("Info", "On iOS, please ensure Background App Refresh is enabled in Settings.");
+        }
+    };
+
+    const exportHistoryCSV = async () => {
+        try {
+            const hist = await StorageService.getHistory();
+            let csv = 'Date,WaitTime(Minutes),WaitTime(Hours)\n';
+            Object.keys(hist).sort().forEach(date => {
+                const ms = hist[date];
+                const mins = (ms / 60000).toFixed(2);
+                const hours = (ms / 3600000).toFixed(2);
+                csv += `${date},${mins},${hours}\n`;
+            });
+
+            const path = FileSystem.documentDirectory + 'intime_export.csv';
+            await FileSystem.writeAsStringAsync(path, csv, { encoding: FileSystem.EncodingType.UTF8 });
+
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(path);
+            } else {
+                Alert.alert("Error", "Sharing is not available on this device");
+            }
+        } catch (e) {
+            Alert.alert("Export Failed", e.message);
+        }
+    };
+
+    // Calculate totals
+    const totalMs = sessionDuration + todayTotal;
+    const totalHours = totalMs / (1000 * 60 * 60);
+    const goalHours = 8.5;
+    const isGoalReached = totalHours >= goalHours;
+
+    const renderCalendarDay = ({ date, state }) => {
+        const dateStr = date.dateString;
+        const ms = history[dateStr] || 0;
+        const dur = moment.duration(ms);
+        const h = Math.floor(dur.asHours());
+        const m = dur.minutes();
+        const hasData = ms > 0;
+        const displayTime = hasData ? `${h}h${m > 0 ? ` ${m}m` : ''}` : '';
+        const isToday = dateStr === moment().format('YYYY-MM-DD');
+        let textColor = colors.calendarText;
+        if (state === 'disabled') textColor = colors.subText;
+        if (isToday) textColor = colors.accent;
+
+        return (
+            <View style={{ alignItems: 'center', justifyContent: 'center', height: 40 }}>
+                <Text style={{ color: textColor, fontSize: 16, fontWeight: isToday ? 'bold' : 'normal' }}>
+                    {date.day}
+                </Text>
+                {hasData && (
+                    <Text style={{ fontSize: 9, color: h >= 8 ? '#4CAF50' : '#FF9800', fontWeight: 'bold' }}>
+                        {displayTime}
+                    </Text>
+                )}
+            </View>
+        );
+    };
+
+    return (
+        <View style={[styles.container, { backgroundColor: colors.bg }]}>
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} translucent backgroundColor="transparent" />
+
+            {/* Safe Area Wrapper for iOS Notches & Android Status Bars */}
+            <SafeAreaView style={{ flex: 1 }}>
+                <ScrollView
+                    contentContainerStyle={{
+                        paddingBottom: 40,
+                        // Add extra padding for Android transparent status bar if needed
+                        paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 0
+                    }}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+                >
+                    <View style={[styles.header, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+                        <View>
+                            <Text style={[styles.headerTitle, { color: colors.text }]}>InTime</Text>
+                            <Text style={[styles.headerSubtitle, { color: colors.subText }]}>{moment().format('dddd, MMM D')}</Text>
+                        </View>
+
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            {/* Manual Toggle: Only if target is set AND on target network */}
+                            {targetSSID && isOnTargetNetwork && (
+                                <TouchableOpacity style={{ marginRight: 15 }} onPress={async () => {
+                                    const newState = !isManualStop;
+                                    await StorageService.setManualPause(newState);
+                                    setIsManualStop(newState);
+                                    await checkNetworkAndSession();
+                                }}>
+                                    <Ionicons
+                                        name={isManualStop ? "play-circle-outline" : "stop-circle-outline"}
+                                        size={30}
+                                        color={isManualStop ? "#4CAF50" : "#F44336"}
+                                    />
+                                </TouchableOpacity>
+                            )}
+
+                            {/* Reset Icon */}
+                            {targetSSID && (
+                                <TouchableOpacity
+                                    style={{ marginRight: 15 }}
+                                    onPress={handleResetWiFi}
+                                >
+                                    <Ionicons name="trash-outline" size={24} color="#F44336" />
+                                </TouchableOpacity>
+                            )}
+
+                            {/* Edit Icon */}
+                            {targetSSID && (
+                                <TouchableOpacity style={styles.settingsButton} onPress={handleRenameSetup}>
+                                    <Ionicons name="create-outline" size={24} color={colors.text} />
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    </View>
+
+                    {/* Circular Progress Section */}
+                    <View style={styles.progressContainer}>
+                        <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
+                            <CircularProgress
+                                value={totalMs}
+                                maxValue={30600000} // 8.5 hours in ms
+                                radius={RING_RADIUS} // Custom Radius based on Screen Width
+                                duration={100} // Fast animation
+                                progressValueColor={'transparent'}
+                                showProgressValue={false}
+                                activeStrokeColor={isGoalReached ? '#4CAF50' : '#FF9800'}
+                                inActiveStrokeColor={isDark ? '#333' : '#E0E0E0'}
+                                title={''}
+                                titleColor={'transparent'}
+                                titleStyle={{ opacity: 0 }}
+                                titleFontSize={RING_RADIUS * 0.3} // Scale font if it were used
+                            />
+                            {/* Custom Overlay for Stable Text */}
+                            <View style={{
+                                position: 'absolute',
+                                top: 0, left: 0, right: 0, bottom: 0,
+                                justifyContent: 'center', alignItems: 'center'
+                            }}>
+                                <Text style={{
+                                    fontSize: RING_RADIUS * 0.12,  // Responsive Font Size
+                                    fontWeight: 'bold',
+                                    color: colors.subText,
+                                    marginBottom: 4,
+                                    letterSpacing: 1
+                                }}>
+                                    WORKED
+                                </Text>
+                                <Text style={{
+                                    fontSize: RING_RADIUS * 0.28, // Responsive Font Size
+                                    fontWeight: 'bold',
+                                    color: colors.text,
+                                    fontVariant: ['tabular-nums']
+                                }}>
+                                    {(() => {
+                                        const dur = moment.duration(totalMs);
+                                        const h = Math.floor(dur.asHours());
+                                        const m = dur.minutes();
+                                        const s = dur.seconds();
+                                        return `${h}h ${m}m ${s}s`;
+                                    })()}
+                                </Text>
+                            </View>
+                        </View>
+
+                        {isGoalReached && (
+                            <View style={styles.goalBadge}>
+                                <Text style={styles.goalText}>GOAL REACHED! 🎉</Text>
+                            </View>
+                        )}
+                    </View>
+
+                    {/* Connection Info */}
+                    <View style={[styles.card, { backgroundColor: colors.card }]}>
+                        <View style={styles.row}>
+                            <View style={{ flex: 1, marginRight: 10 }}>
+                                <Text style={[styles.label, { color: colors.subText }]}>CURRENT NETWORK</Text>
+                                <Text
+                                    style={[styles.value, { color: colors.text }]}
+                                    numberOfLines={1}
+                                    adjustsFontSizeToFit
+                                >
+                                    {currentSSIDName || "Not Configured"}
+                                </Text>
+                            </View>
+                            <View style={styles.statusDotContainer}>
+                                <View style={[styles.statusDot, { backgroundColor: isConnectedToOffice ? '#4CAF50' : '#F44336' }]} />
+                                <Text style={{ color: colors.subText, marginLeft: 6, fontSize: 12 }}>
+                                    {isConnectedToOffice ? "TRACKING" : "IDLE"}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+
+
+                    {/* Configuration Button - ONLY Visible if Not Set */}
+                    {!targetSSID && (
+                        <TouchableOpacity
+                            style={[
+                                styles.configButton,
+                                {
+                                    backgroundColor: isDark ? 'rgba(76, 175, 80, 0.15)' : 'rgba(76, 175, 80, 0.1)',
+                                    borderColor: isDark ? 'rgba(76, 175, 80, 0.5)' : 'rgba(76, 175, 80, 0.3)',
+                                    // Remove elevation on Android to avoid black artifacts with transparent bg
+                                    elevation: 0,
+                                    shadowOpacity: 0,
+                                }
+                            ]}
+                            onPress={handleInitialSetup}
+                        >
+                            <Text style={[styles.configButtonText, { color: isDark ? '#81C784' : '#2E7D32' }]}>
+                                Set Current Wi-Fi as Office
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Success Modal */}
+                    <Modal
+                        animationType="fade"
+                        transparent={true}
+                        visible={successVisible}
+                        onRequestClose={handleSuccessClose}
+                    >
+                        <View style={styles.modalOverlay}>
+                            <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: 'rgba(76, 175, 80, 0.3)', borderWidth: 1.5 }]}>
+                                <View style={{ alignItems: 'center', marginBottom: 20 }}>
+                                    <View style={{
+                                        width: 70, height: 70, borderRadius: 35,
+                                        backgroundColor: 'rgba(76, 175, 80, 0.15)',
+                                        justifyContent: 'center', alignItems: 'center',
+                                        marginBottom: 15,
+                                        borderWidth: 1, borderColor: 'rgba(76, 175, 80, 0.2)'
+                                    }}>
+                                        <Ionicons name="checkmark" size={40} color="#4CAF50" />
+                                    </View>
+                                    <Text style={[styles.modalTitle, { color: colors.text, fontSize: 24 }]}>{successData.title}</Text>
+                                </View>
+
+                                <Text style={[styles.modalSubtitle, { color: colors.subText, textAlign: 'center', fontSize: 16, lineHeight: 24 }]}>
+                                    {successData.message}
+                                </Text>
+
+                                <View style={{ alignItems: 'center', marginTop: 10 }}>
+                                    <TouchableOpacity
+                                        style={[styles.saveButton, { width: '100%', alignItems: 'center', shadowOpacity: 0.2 }]}
+                                        onPress={handleSuccessClose}
+                                    >
+                                        <Text style={styles.saveButtonText}>Awesome!</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </View>
+                    </Modal>
+
+                    {/* Battery Optimization Popup */}
+                    <Modal
+                        animationType="fade"
+                        transparent={true}
+                        visible={showBatteryPopup}
+                        onRequestClose={() => setShowBatteryPopup(false)}
+                    >
+                        <View style={styles.modalOverlay}>
+                            <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: 'rgba(255, 152, 0, 0.4)', borderWidth: 2 }]}>
+                                <View style={{ alignItems: 'center', marginBottom: 20 }}>
+                                    <View style={{
+                                        width: 70, height: 70, borderRadius: 35,
+                                        backgroundColor: 'rgba(255, 152, 0, 0.15)',
+                                        justifyContent: 'center', alignItems: 'center',
+                                        marginBottom: 15,
+                                        borderWidth: 2, borderColor: 'rgba(255, 152, 0, 0.3)'
+                                    }}>
+                                        <Ionicons name="flash" size={40} color="#FF9800" />
+                                    </View>
+                                    <Text style={[styles.modalTitle, { color: colors.text, fontSize: 22 }]}>⚡ Battery Optimization</Text>
+                                </View>
+
+                                <Text style={[styles.modalSubtitle, { color: colors.subText, textAlign: 'center', fontSize: 15, lineHeight: 22 }]}>
+                                    For reliable background tracking, please disable battery optimization for InTime.
+                                    {'\n\n'}
+                                    <Text style={{ fontWeight: '600', color: colors.text }}>Steps:</Text>
+                                    {'\n'}1. Find 'InTime' in the list
+                                    {'\n'}2. Select 'Don't optimize'
+                                    {'\n'}3. Tap 'Done'
+                                </Text>
+
+                                <View style={{ flexDirection: 'row', marginTop: 20, gap: 10 }}>
+                                    <TouchableOpacity
+                                        style={[styles.cancelButton, { flex: 1, borderColor: colors.divider }]}
+                                        onPress={() => setShowBatteryPopup(false)}
+                                    >
+                                        <Text style={[styles.cancelButtonText, { color: colors.text }]}>Later</Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        style={[styles.saveButton, { flex: 1 }]}
+                                        onPress={async () => {
+                                            const { ForegroundService } = await import('./src/services/ForegroundService');
+                                            await ForegroundService.requestBatteryOptimizationExemption();
+                                            setShowBatteryPopup(false);
+                                        }}
+                                    >
+                                        <Text style={styles.saveButtonText}>Fix Now</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </View>
+                    </Modal>
+
+
+
+                    {/* Weekly Histogram - Weekdays Only */}
+                    {weeklyData.length > 0 && (
+                        <View style={[styles.sectionContainer, { backgroundColor: colors.card, marginBottom: 15, paddingVertical: 15 }]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, paddingHorizontal: 20 }}>
+                                <Ionicons name="bar-chart-outline" size={20} color={colors.accent} />
+                                <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 8 }]}>
+                                    This Week (Weekdays)
+                                </Text>
+                            </View>
+
+                            <View style={{ paddingHorizontal: 20 }}>
+                                {/* Bar Chart */}
+                                <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 120, marginBottom: 10 }}>
+                                    {weeklyData.map((item, index) => {
+                                        const maxHours = Math.max(...weeklyData.map(d => parseFloat(d.hours)), 8);
+                                        const height = (parseFloat(item.hours) / maxHours) * 100;
+                                        const isToday = item.date === moment().format('YYYY-MM-DD');
+
+                                        return (
+                                            <View key={index} style={{ flex: 1, alignItems: 'center', marginHorizontal: 2 }}>
+                                                {/* Hour Label */}
+                                                <Text style={{
+                                                    fontSize: 10,
+                                                    fontWeight: '600',
+                                                    color: item.hours > 0 ? '#4CAF50' : colors.subText,
+                                                    marginBottom: 4
+                                                }}>
+                                                    {item.hours > 0 ? `${item.hours}h` : '-'}
+                                                </Text>
+
+                                                {/* Bar */}
+                                                <View style={{
+                                                    width: '100%',
+                                                    height: `${Math.max(height, 5)}%`,
+                                                    backgroundColor: isToday
+                                                        ? (isDark ? 'rgba(76, 175, 80, 0.5)' : 'rgba(76, 175, 80, 0.4)')
+                                                        : (isDark ? 'rgba(76, 175, 80, 0.25)' : 'rgba(76, 175, 80, 0.2)'),
+                                                    borderRadius: 6,
+                                                    borderWidth: isToday ? 2 : 1,
+                                                    borderColor: isToday ? '#4CAF50' : 'rgba(76, 175, 80, 0.3)',
+                                                    minHeight: 5,
+                                                    position: 'relative',
+                                                    overflow: 'hidden'
+                                                }}>
+                                                    {/* Glassmorphism effect */}
+                                                    {item.hours > 0 && (
+                                                        <View style={{
+                                                            position: 'absolute',
+                                                            top: 0,
+                                                            left: 0,
+                                                            right: 0,
+                                                            height: '50%',
+                                                            backgroundColor: 'rgba(255, 255, 255, 0.1)'
+                                                        }} />
+                                                    )}
+                                                </View>
+
+                                                {/* Day Label */}
+                                                <Text style={{
+                                                    fontSize: 11,
+                                                    fontWeight: isToday ? '700' : '500',
+                                                    color: isToday ? '#4CAF50' : colors.subText,
+                                                    marginTop: 6
+                                                }}>
+                                                    {item.day}
+                                                </Text>
+                                            </View>
+                                        );
+                                    })}
+                                </View>
+
+                                {/* Stats */}
+                                <View style={{
+                                    flexDirection: 'row',
+                                    justifyContent: 'space-around',
+                                    paddingVertical: 10,
+                                    paddingHorizontal: 10,
+                                    backgroundColor: isDark ? 'rgba(76, 175, 80, 0.08)' : 'rgba(76, 175, 80, 0.05)',
+                                    borderRadius: 10,
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(76, 175, 80, 0.2)'
+                                }}>
+                                    <View style={{ alignItems: 'center' }}>
+                                        <Text style={{ fontSize: 11, color: colors.subText }}>Total</Text>
+                                        <Text style={{ fontSize: 16, fontWeight: '700', color: '#4CAF50' }}>
+                                            {weeklyData.reduce((sum, d) => sum + parseFloat(d.hours), 0).toFixed(1)}h
+                                        </Text>
+                                    </View>
+                                    <View style={{ width: 1, backgroundColor: colors.divider }} />
+                                    <View style={{ alignItems: 'center' }}>
+                                        <Text style={{ fontSize: 11, color: colors.subText }}>Average</Text>
+                                        <Text style={{ fontSize: 16, fontWeight: '700', color: '#4CAF50' }}>
+                                            {(weeklyData.reduce((sum, d) => sum + parseFloat(d.hours), 0) / weeklyData.length).toFixed(1)}h
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+                        </View>
+                    )}
+
+                    {/* Today's Sessions Timeline */}
+                    {todaySessions.length > 0 && (
+                        <View style={[styles.sectionContainer, { backgroundColor: colors.card, marginBottom: 15, paddingVertical: 15 }]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingHorizontal: 20 }}>
+                                <Ionicons name="time-outline" size={20} color={colors.primary} />
+                                <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 8 }]}>
+                                    Today's Sessions
+                                </Text>
+                            </View>
+
+
+                            <ScrollView
+                                style={{ maxHeight: 250 }}
+                                showsVerticalScrollIndicator={false}
+                                nestedScrollEnabled={true}
+                            >
+                                {todaySessions.map((session, index) => {
+                                    const duration = (session.duration / 1000 / 60).toFixed(0); // minutes
+                                    const hours = Math.floor(duration / 60);
+                                    const mins = duration % 60;
+                                    const durationText = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
+                                    return (
+                                        <View
+                                            key={index}
+                                            style={{
+                                                marginHorizontal: 20,
+                                                marginBottom: 6,
+                                                padding: 10,
+                                                borderRadius: 10,
+                                                backgroundColor: isDark ? 'rgba(76, 175, 80, 0.08)' : 'rgba(76, 175, 80, 0.05)',
+                                                borderLeftWidth: 3,
+                                                borderLeftColor: '#4CAF50',
+                                                flexDirection: 'row',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between'
+                                            }}
+                                        >
+                                            <View style={{ flex: 1 }}>
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                                                    <View style={{
+                                                        width: 5,
+                                                        height: 5,
+                                                        borderRadius: 2.5,
+                                                        backgroundColor: '#4CAF50',
+                                                        marginRight: 6
+                                                    }} />
+                                                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                                                        {moment(session.start).format('h:mm A')}
+                                                    </Text>
+                                                    <Text style={{ marginHorizontal: 5, color: colors.subText, fontSize: 13 }}>→</Text>
+                                                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                                                        {moment(session.end).format('h:mm A')}
+                                                    </Text>
+                                                </View>
+                                                <Text style={{ fontSize: 11, color: colors.subText, marginLeft: 11 }}>
+                                                    Session {index + 1}
+                                                </Text>
+                                            </View>
+
+                                            <View style={{
+                                                backgroundColor: isDark ? 'rgba(76, 175, 80, 0.15)' : 'rgba(76, 175, 80, 0.1)',
+                                                paddingHorizontal: 8,
+                                                paddingVertical: 4,
+                                                borderRadius: 6,
+                                                borderWidth: 1,
+                                                borderColor: 'rgba(76, 175, 80, 0.3)'
+                                            }}>
+                                                <Text style={{ fontSize: 12, fontWeight: '700', color: '#4CAF50' }}>
+                                                    {durationText}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                    );
+                                })}
+                            </ScrollView>
+                        </View>
+                    )}
+
+
+                    {/* Calendar Section */}
+                    <View style={[styles.sectionContainer, { backgroundColor: colors.card, paddingVertical: 10 }]}>
+                        <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 15, marginTop: 15 }]}>History</Text>
+                        <Calendar
+                            key={isDark ? 'dark' : 'light'}
+                            theme={{
+                                backgroundColor: colors.card,
+                                calendarBackground: colors.card,
+                                textSectionTitleColor: colors.subText,
+                                selectedDayBackgroundColor: colors.accent,
+                                selectedDayTextColor: '#ffffff',
+                                todayTextColor: colors.accent,
+                                dayTextColor: colors.text,
+                                textDisabledColor: '#d9e1e8',
+                                arrowColor: colors.accent,
+                                monthTextColor: colors.text,
+                                indicatorColor: colors.accent,
+                            }}
+                            dayComponent={renderCalendarDay}
+                            enableSwipeMonths={true}
+                        />
+                    </View>
+
+                </ScrollView>
+            </SafeAreaView>
+
+            {/* Wi-Fi Naming Modal - Simplified */}
+            <Modal
+                transparent={true}
+                visible={modalVisible}
+                animationType="fade"
+                onRequestClose={() => setModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+                        {/* Dynamic Title */}
+                        <Text style={[styles.modalTitle, { color: colors.text }]}>{modalTitle}</Text>
+
+                        {/* Show captured SSID if available */}
+                        {capturedSSID && (
+                            <View style={{ backgroundColor: colors.inputBg, padding: 12, borderRadius: 8, marginBottom: 15 }}>
+                                <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 4 }}>Detected Network:</Text>
+                                <Text style={{ color: colors.text, fontSize: 16, fontWeight: 'bold' }}>{capturedSSID}</Text>
+                                <Text style={{ color: colors.subText, fontSize: 11, marginTop: 4 }}>
+                                    ✓ Tracking will only work on this specific Wi-Fi
+                                </Text>
+                            </View>
+                        )}
+
+                        {/* Show iOS warning if SSID not available */}
+                        {!capturedSSID && modalTitle.includes('Set Name') && (
+                            <View style={{ backgroundColor: '#FFF3CD', padding: 12, borderRadius: 8, marginBottom: 15 }}>
+                                <Text style={{ color: '#856404', fontSize: 12 }}>
+                                    ⚠️ SSID detection not available. Will track on any Wi-Fi network.
+                                </Text>
+                            </View>
+                        )}
+
+                        <TextInput
+                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text }]}
+                            placeholder="e.g. Work Wi-Fi"
+                            placeholderTextColor={colors.subText}
+                            value={wifiNameInput}
+                            onChangeText={setWifiNameInput}
+                            autoFocus={true}
+                        />
+
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
+                                <Text style={styles.cancelButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.saveButton} onPress={handleSaveWifiName}>
+                                <Text style={styles.saveButtonText}>Save Name</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Troubleshooting & Backup Section REMOVED */}
+
+                    </View>
+                </View>
+            </Modal>
+        </View>
+    );
+}
+
+// Styles imported from src/styles/AppStyles.js
+

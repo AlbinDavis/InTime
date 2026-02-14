@@ -1,0 +1,67 @@
+{
+    "expo": {
+        "name": "InTime",
+        "slug": "intime",
+        "version": "1.0.0",
+        "orientation": "portrait",
+        "icon": "./assets/icon.png",
+        "userInterfaceStyle": "light",
+        "splash": {
+            "image": "./assets/splash.png",
+            "resizeMode": "contain",
+            "backgroundColor": "#ffffff"
+        },
+        "assetBundlePatterns": [
+            "**/*"
+        ],
+        "ios": {
+            "supportsTablet": true,
+            "bundleIdentifier": "com.lbndvs.officetimetracker",
+            "infoPlist": {
+                "UIBackgroundModes": [
+                    "location",
+                    "fetch",
+                    "processing",
+                    "remote-notification"
+                ],
+                "NSLocationAlwaysAndWhenInUseUsageDescription": "This app requires continuous background location access to automatically track your office hours even when the app is closed. This ensures accurate time tracking throughout your workday.",
+                "NSLocationWhenInUseUsageDescription": "This app needs location access to identify the currently connected Wi-Fi network."
+            }
+        },
+        "android": {
+            "adaptiveIcon": {
+                "foregroundImage": "./assets/adaptive-icon.png",
+                "backgroundColor": "#ffffff"
+            },
+            "allowBackup": true,
+            "package": "com.lbndvs.officetimetracker",
+            "permissions": [
+                "ACCESS_COARSE_LOCATION",
+                "ACCESS_FINE_LOCATION",
+                "ACCESS_BACKGROUND_LOCATION",
+                "ACCESS_WIFI_STATE",
+                "ACCESS_NETWORK_STATE",
+                "CHANGE_WIFI_STATE",
+                "NEARBY_WIFI_DEVICES",
+                "FOREGROUND_SERVICE",
+                "FOREGROUND_SERVICE_LOCATION",
+                "RECEIVE_BOOT_COMPLETED",
+                "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+                "WAKE_LOCK",
+                "POST_NOTIFICATIONS"
+            ],
+            "useNextNotificationsApi": true
+        },
+        "web": {
+            "favicon": "./assets/favicon.png"
+        },
+        "plugins": [
+            [
+                "expo-location",
+                {
+                    "locationAlwaysAndWhenInUsePermission": "Allow Office Time Tracker to use your location."
+                }
+            ]
+        ]
+    }
+}
