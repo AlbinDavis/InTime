@@ -109,8 +109,15 @@ export default function App() {
     // Modal State
     const [modalVisible, setModalVisible] = useState(false);
     const [wifiNameInput, setWifiNameInput] = useState('');
+    const [goalHoursInput, setGoalHoursInput] = useState(''); // Goal time input for modal
     const [capturedSSID, setCapturedSSID] = useState(null); // Captured SSID
     const [modalTitle, setModalTitle] = useState('Rename Wi-Fi Name'); // Dynamic Title
+
+    // Goal Hours State
+    const [goalHours, setGoalHoursState] = useState(8.5);
+
+    // Current Session Start (for instant start time display)
+    const [currentSessionStart, setCurrentSessionStart] = useState(null);
 
     // Success Modal State
     const [successVisible, setSuccessVisible] = useState(false);
@@ -161,6 +168,11 @@ export default function App() {
 
         const storedSSID = await StorageService.getTargetSSID();
         setTargetSSID(storedSSID);
+
+        // Load configurable goal hours
+        const storedGoal = await StorageService.getGoalHours();
+        setGoalHoursState(storedGoal);
+
         await refreshTotals(); // Load all data including weekly histogram and sessions
 
         // TESTING: Generate mock weekly data for histogram
@@ -266,8 +278,12 @@ export default function App() {
             if (shouldBeTracking && !session) {
                 // Must Start
                 newSSIDName = storedTarget; // Display Friendly Name
-                await StorageService.startSession();
+                const newSession = await StorageService.startSession();
                 newIsConnected = true;
+                // Show start time immediately
+                if (newSession) {
+                    setCurrentSessionStart(newSession.start);
+                }
             } else if (session) {
                 // Check for midnight transition
                 const startDay = moment(session.start).format('YYYY-MM-DD');
@@ -282,6 +298,8 @@ export default function App() {
                 // Keep Tracking
                 newIsConnected = true;
                 newSSIDName = storedTarget;
+                // Always expose start time of active session
+                setCurrentSessionStart(session.start);
 
                 setSessionDuration(Date.now() - session.start);
 
@@ -290,6 +308,7 @@ export default function App() {
                 }
             } else {
                 setSessionDuration(0);
+                setCurrentSessionStart(null);
             }
 
             if (!storedTarget) {
@@ -413,9 +432,12 @@ export default function App() {
     };
 
     // Generic open modal function
-    const handleOpenModal = (isInitialSetup) => {
+    const handleOpenModal = async (isInitialSetup) => {
         setWifiNameInput("");
         setModalTitle(isInitialSetup ? "Set Name for Office Wi-Fi" : "Rename Wi-Fi Name");
+        // Pre-populate goal hours with stored value
+        const storedGoal = await StorageService.getGoalHours();
+        setGoalHoursInput(String(storedGoal));
         setModalVisible(true);
     };
 
@@ -475,8 +497,19 @@ export default function App() {
             return;
         }
 
+        // Parse and validate goal hours
+        const parsedGoal = parseFloat(goalHoursInput);
+        if (isNaN(parsedGoal) || parsedGoal <= 0 || parsedGoal > 24) {
+            Alert.alert("Invalid Goal Time", "Please enter a valid goal time between 0.5 and 24 hours.");
+            return;
+        }
+
         // Save friendly name and captured SSID
         await StorageService.setTargetSSID(wifiNameInput.trim(), capturedSSID);
+
+        // Save goal hours globally
+        await StorageService.setGoalHours(parsedGoal);
+        setGoalHoursState(parsedGoal);
 
         setTargetSSID(wifiNameInput.trim());
         setModalVisible(false);
@@ -484,12 +517,12 @@ export default function App() {
         if (capturedSSID) {
             showSuccess(
                 "All Set!",
-                `Office Wi-Fi set to "${wifiNameInput.trim()}"\n\nSSID: ${capturedSSID}\n\nTracking will now automatically start when you connect to this network.`
+                `Office Wi-Fi set to "${wifiNameInput.trim()}"\n\nSSID: ${capturedSSID}\nGoal: ${parsedGoal}h/day\n\nTracking will now automatically start when you connect to this network.`
             );
         } else {
             showSuccess(
                 "All Set!",
-                `Office Wi-Fi set to "${wifiNameInput.trim()}"\n\nNote: SSID detection not available. Will track on any Wi-Fi network.`
+                `Office Wi-Fi set to "${wifiNameInput.trim()}"\nGoal: ${parsedGoal}h/day\n\nNote: SSID detection not available. Will track on any Wi-Fi network.`
             );
         }
 
@@ -542,7 +575,7 @@ export default function App() {
     const displayMs = isViewingHistory ? selectedDateTotal : (sessionDuration + todayTotal);
     const totalMs = sessionDuration + todayTotal; // Keep live total for ring max
     const totalHours = displayMs / (1000 * 60 * 60);
-    const goalHours = 8.5;
+    const goalMs = goalHours * 60 * 60 * 1000; // Dynamic goal in ms
     const isGoalReached = totalHours >= goalHours;
     const displayWeekData = isViewingHistory ? selectedWeekData : weeklyData;
     const displaySessions = isViewingHistory ? selectedDateSessions : todaySessions;
@@ -664,8 +697,8 @@ export default function App() {
                     <View style={styles.progressContainer}>
                         <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
                             <CircularProgress
-                                value={Math.min(displayMs, 30600000)}
-                                maxValue={30600000} // 8.5 hours in ms
+                                value={Math.min(displayMs, goalMs)}
+                                maxValue={goalMs} // Dynamic goal in ms
                                 radius={RING_RADIUS} // Custom Radius based on Screen Width
                                 duration={100} // Fast animation
                                 progressValueColor={'transparent'}
@@ -708,8 +741,8 @@ export default function App() {
                                     })()}
                                 </Text>
 
-                                {/* Start and End Times */}
-                                {displaySessions.length > 0 && (
+                                {/* Start and End Times - show immediately when session is active */}
+                                {(displaySessions.length > 0 || currentSessionStart) && (
                                     <View style={{
                                         flexDirection: 'row',
                                         justifyContent: 'space-between',
@@ -717,7 +750,7 @@ export default function App() {
                                         marginTop: RING_RADIUS * 0.12,
                                         paddingHorizontal: RING_RADIUS * 0.1
                                     }}>
-                                        {/* Start Time - First Session */}
+                                        {/* Start Time - First Session or current active session */}
                                         <View style={{ alignItems: 'center' }}>
                                             <Text style={{
                                                 fontSize: RING_RADIUS * 0.08,
@@ -733,11 +766,11 @@ export default function App() {
                                                 color: '#4CAF50',
                                                 fontVariant: ['tabular-nums']
                                             }}>
-                                                {moment(displaySessions[0].start).format('h:mm A')}
+                                                {moment(displaySessions.length > 0 ? displaySessions[0].start : currentSessionStart).format('h:mm A')}
                                             </Text>
                                         </View>
 
-                                        {/* End Time - Last Session */}
+                                        {/* End Time - Last Session or Now */}
                                         <View style={{ alignItems: 'center' }}>
                                             <Text style={{
                                                 fontSize: RING_RADIUS * 0.08,
@@ -753,7 +786,9 @@ export default function App() {
                                                 color: '#FF9800',
                                                 fontVariant: ['tabular-nums']
                                             }}>
-                                                {moment(displaySessions[displaySessions.length - 1].end || Date.now()).format('h:mm A')}
+                                                {displaySessions.length > 0
+                                                    ? moment(displaySessions[displaySessions.length - 1].end || Date.now()).format('h:mm A')
+                                                    : moment().format('h:mm A')}
                                             </Text>
                                         </View>
                                     </View>
@@ -1132,12 +1167,23 @@ export default function App() {
                             autoFocus={true}
                         />
 
+                        {/* Goal Time Input */}
+                        <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 6, marginTop: 4 }}>Daily Goal (hours)</Text>
+                        <TextInput
+                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text }]}
+                            placeholder="8.5"
+                            placeholderTextColor={colors.subText}
+                            value={goalHoursInput}
+                            onChangeText={setGoalHoursInput}
+                            keyboardType="decimal-pad"
+                        />
+
                         <View style={styles.modalButtons}>
                             <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
                                 <Text style={styles.cancelButtonText}>Cancel</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.saveButton} onPress={handleSaveWifiName}>
-                                <Text style={styles.saveButtonText}>Save Name</Text>
+                                <Text style={styles.saveButtonText}>Save</Text>
                             </TouchableOpacity>
                         </View>
 
