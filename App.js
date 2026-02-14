@@ -677,7 +677,7 @@ export default function App() {
                                 duration={500} // Smoother animation
                                 progressValueColor={'transparent'}
                                 showProgressValue={false}
-                                activeStrokeColor={isViewingHistory ? '#2196F3' : '#4CAF50'} // Blue for History, Green for Goal
+                                activeStrokeColor={displayMs < goalMs ? '#FFD700' : '#4CAF50'} // Gold if under goal, Green if reached
                                 inActiveStrokeColor={isDark ? '#333' : '#E0E0E0'}
                                 title={''}
                                 titleColor={'transparent'}
@@ -686,7 +686,7 @@ export default function App() {
                             />
 
                             {/* Overtime Ring - Layered on top */}
-                            {!isViewingHistory && displayMs > goalMs && (
+                            {displayMs > goalMs && (
                                 <View style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center' }]}>
                                     <CircularProgress
                                         value={displayMs - goalMs}
@@ -695,7 +695,7 @@ export default function App() {
                                         duration={0} // Instant update for overlay
                                         progressValueColor={'transparent'}
                                         showProgressValue={false}
-                                        activeStrokeColor={'#FF5252'} // Red for Overtime
+                                        activeStrokeColor={'#2196F3'} // Blue for Overtime
                                         inActiveStrokeColor={'transparent'}
                                         title={''}
                                         titleColor={'transparent'}
