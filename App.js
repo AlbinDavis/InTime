@@ -586,7 +586,7 @@ export default function App() {
                                 duration={100} // Fast animation
                                 progressValueColor={'transparent'}
                                 showProgressValue={false}
-                                activeStrokeColor={isGoalReached ? '#4CAF50' : '#FF9800'}
+                                activeStrokeColor={isGoalReached ? '#2196F3' : '#FF9800'}
                                 inActiveStrokeColor={isDark ? '#333' : '#E0E0E0'}
                                 title={''}
                                 titleColor={'transparent'}
