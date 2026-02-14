@@ -1179,7 +1179,7 @@ export default function App() {
                                     {renderCalendarDay(props)}
                                 </TouchableOpacity>
                             )}
-                            enableSwipeMonths={true}
+                            enableSwipeMonths={false}
                             markedDates={selectedDate ? { [selectedDate]: { selected: true, selectedColor: '#FF9800' } } : {}}
                         />
                     </View>
