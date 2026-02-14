@@ -781,7 +781,7 @@ export default function App() {
                                 <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 120, marginBottom: 10 }}>
                                     {weeklyData.map((item, index) => {
                                         const maxHours = Math.max(...weeklyData.map(d => parseFloat(d.hours)), 8);
-                                        const height = (parseFloat(item.hours) / maxHours) * 100;
+                                        const height = (parseFloat(item.hours) / maxHours) * 80;
                                         const isToday = item.date === moment().format('YYYY-MM-DD');
 
                                         return (
