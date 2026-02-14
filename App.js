@@ -342,6 +342,8 @@ export default function App() {
     // Handle calendar date selection
     const handleDateSelect = async (dateString) => {
         const todayStr = moment().format('YYYY-MM-DD');
+        // Block future dates
+        if (moment(dateString).isAfter(moment(), 'day')) return;
         if (dateString === todayStr || dateString === selectedDate) {
             // Tapping today or same date again => return to live view
             setSelectedDate(null);
@@ -662,13 +664,13 @@ export default function App() {
                     <View style={styles.progressContainer}>
                         <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
                             <CircularProgress
-                                value={displayMs}
+                                value={Math.min(displayMs, 30600000)}
                                 maxValue={30600000} // 8.5 hours in ms
                                 radius={RING_RADIUS} // Custom Radius based on Screen Width
                                 duration={100} // Fast animation
                                 progressValueColor={'transparent'}
                                 showProgressValue={false}
-                                activeStrokeColor={isViewingHistory ? '#2196F3' : (isGoalReached ? '#2196F3' : '#FF9800')}
+                                activeStrokeColor={isViewingHistory ? '#2196F3' : (isGoalReached ? '#4CAF50' : '#FF9800')}
                                 inActiveStrokeColor={isDark ? '#333' : '#E0E0E0'}
                                 title={''}
                                 titleColor={'transparent'}
@@ -873,7 +875,7 @@ export default function App() {
                                                 <Text style={{
                                                     fontSize: 10,
                                                     fontWeight: '600',
-                                                    color: item.hours > 0 ? '#4CAF50' : colors.subText,
+                                                    color: item.hours > 0 ? (isViewingHistory ? '#2196F3' : '#4CAF50') : colors.subText,
                                                     marginBottom: 4
                                                 }}>
                                                     {item.hours > 0 ? `${item.hours}h` : '-'}
@@ -884,11 +886,17 @@ export default function App() {
                                                     width: '100%',
                                                     height: `${Math.max(height, 5)}%`,
                                                     backgroundColor: isToday
-                                                        ? (isDark ? 'rgba(76, 175, 80, 0.5)' : 'rgba(76, 175, 80, 0.4)')
-                                                        : (isDark ? 'rgba(76, 175, 80, 0.25)' : 'rgba(76, 175, 80, 0.2)'),
+                                                        ? (isDark
+                                                            ? (isViewingHistory ? 'rgba(33, 150, 243, 0.5)' : 'rgba(76, 175, 80, 0.5)')
+                                                            : (isViewingHistory ? 'rgba(33, 150, 243, 0.4)' : 'rgba(76, 175, 80, 0.4)'))
+                                                        : (isDark
+                                                            ? (isViewingHistory ? 'rgba(33, 150, 243, 0.25)' : 'rgba(76, 175, 80, 0.25)')
+                                                            : (isViewingHistory ? 'rgba(33, 150, 243, 0.2)' : 'rgba(76, 175, 80, 0.2)')),
                                                     borderRadius: 6,
                                                     borderWidth: isToday ? 2 : 1,
-                                                    borderColor: isToday ? '#4CAF50' : 'rgba(76, 175, 80, 0.3)',
+                                                    borderColor: isToday
+                                                        ? (isViewingHistory ? '#2196F3' : '#4CAF50')
+                                                        : (isViewingHistory ? 'rgba(33, 150, 243, 0.3)' : 'rgba(76, 175, 80, 0.3)'),
                                                     minHeight: 5,
                                                     position: 'relative',
                                                     overflow: 'hidden'
@@ -910,7 +918,7 @@ export default function App() {
                                                 <Text style={{
                                                     fontSize: 11,
                                                     fontWeight: isToday ? '700' : '500',
-                                                    color: isToday ? '#4CAF50' : colors.subText,
+                                                    color: isToday ? (isViewingHistory ? '#2196F3' : '#4CAF50') : colors.subText,
                                                     marginTop: 6
                                                 }}>
                                                     {item.day}
@@ -926,21 +934,23 @@ export default function App() {
                                     justifyContent: 'space-around',
                                     paddingVertical: 10,
                                     paddingHorizontal: 10,
-                                    backgroundColor: isDark ? 'rgba(76, 175, 80, 0.08)' : 'rgba(76, 175, 80, 0.05)',
+                                    backgroundColor: isDark
+                                        ? (isViewingHistory ? 'rgba(33, 150, 243, 0.08)' : 'rgba(76, 175, 80, 0.08)')
+                                        : (isViewingHistory ? 'rgba(33, 150, 243, 0.05)' : 'rgba(76, 175, 80, 0.05)'),
                                     borderRadius: 10,
                                     borderWidth: 1,
-                                    borderColor: 'rgba(76, 175, 80, 0.2)'
+                                    borderColor: isViewingHistory ? 'rgba(33, 150, 243, 0.2)' : 'rgba(76, 175, 80, 0.2)'
                                 }}>
                                     <View style={{ alignItems: 'center' }}>
                                         <Text style={{ fontSize: 11, color: colors.subText }}>Total</Text>
-                                        <Text style={{ fontSize: 16, fontWeight: '700', color: '#4CAF50' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '700', color: isViewingHistory ? '#2196F3' : '#4CAF50' }}>
                                             {displayWeekData.reduce((sum, d) => sum + parseFloat(d.hours), 0).toFixed(1)}h
                                         </Text>
                                     </View>
                                     <View style={{ width: 1, backgroundColor: colors.divider }} />
                                     <View style={{ alignItems: 'center' }}>
                                         <Text style={{ fontSize: 11, color: colors.subText }}>Average</Text>
-                                        <Text style={{ fontSize: 16, fontWeight: '700', color: '#4CAF50' }}>
+                                        <Text style={{ fontSize: 16, fontWeight: '700', color: isViewingHistory ? '#2196F3' : '#4CAF50' }}>
                                             {(() => {
                                                 const activeDays = displayWeekData.filter(d => parseFloat(d.hours) > 0);
                                                 const total = activeDays.reduce((sum, d) => sum + parseFloat(d.hours), 0);
@@ -1000,9 +1010,11 @@ export default function App() {
                                                     marginBottom: 8,
                                                     padding: 10,
                                                     borderRadius: 10,
-                                                    backgroundColor: isDark ? 'rgba(76, 175, 80, 0.08)' : 'rgba(76, 175, 80, 0.05)',
+                                                    backgroundColor: isDark
+                                                        ? (isViewingHistory ? 'rgba(33, 150, 243, 0.08)' : 'rgba(76, 175, 80, 0.08)')
+                                                        : (isViewingHistory ? 'rgba(33, 150, 243, 0.05)' : 'rgba(76, 175, 80, 0.05)'),
                                                     borderLeftWidth: 4,
-                                                    borderLeftColor: isOngoing ? '#FF9800' : '#4CAF50',
+                                                    borderLeftColor: isViewingHistory ? '#2196F3' : (isOngoing ? '#FF9800' : '#4CAF50'),
                                                     flexDirection: 'row',
                                                     alignItems: 'center',
                                                     justifyContent: 'space-between'
@@ -1013,7 +1025,7 @@ export default function App() {
                                                         width: 8,
                                                         height: 8,
                                                         borderRadius: 4,
-                                                        backgroundColor: isOngoing ? '#FF9800' : '#4CAF50',
+                                                        backgroundColor: isViewingHistory ? '#2196F3' : (isOngoing ? '#FF9800' : '#4CAF50'),
                                                         marginRight: 8
                                                     }} />
                                                     <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
@@ -1026,16 +1038,18 @@ export default function App() {
                                                 </View>
 
                                                 <View style={{
-                                                    backgroundColor: isDark ? 'rgba(76, 175, 80, 0.15)' : 'rgba(76, 175, 80, 0.12)',
+                                                    backgroundColor: isDark
+                                                        ? (isViewingHistory ? 'rgba(33, 150, 243, 0.15)' : 'rgba(76, 175, 80, 0.15)')
+                                                        : (isViewingHistory ? 'rgba(33, 150, 243, 0.12)' : 'rgba(76, 175, 80, 0.12)'),
                                                     paddingHorizontal: 10,
                                                     paddingVertical: 5,
                                                     borderRadius: 6,
                                                     borderWidth: 1,
-                                                    borderColor: 'rgba(76, 175, 80, 0.25)',
+                                                    borderColor: isViewingHistory ? 'rgba(33, 150, 243, 0.25)' : 'rgba(76, 175, 80, 0.25)',
                                                     minWidth: 60,
                                                     alignItems: 'center'
                                                 }}>
-                                                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#4CAF50' }}>
+                                                    <Text style={{ fontSize: 12, fontWeight: '700', color: isViewingHistory ? '#2196F3' : '#4CAF50' }}>
                                                         {durationText}
                                                     </Text>
                                                 </View>
