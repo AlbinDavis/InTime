@@ -7,6 +7,7 @@ const KEYS = {
     CURRENT_SESSION: 'CURRENT_SESSION',
     HISTORY: 'HISTORY',
     SESSIONS: 'SESSIONS', // Individual session details with start/end times
+    GOAL_HOURS: 'GOAL_HOURS', // Configurable daily goal in hours (default 8.5)
 };
 
 export const StorageService = {
@@ -49,6 +50,24 @@ export const StorageService = {
             await AsyncStorage.removeItem(KEYS.RAW_SSID);
         } catch (e) {
             console.error('Error clearing SSID', e);
+        }
+    },
+
+    // --- Goal Hours (configurable daily target) ---
+    getGoalHours: async () => {
+        try {
+            const val = await AsyncStorage.getItem(KEYS.GOAL_HOURS);
+            return val !== null ? parseFloat(val) : 8.5; // Default 8.5 hours
+        } catch (e) {
+            return 8.5;
+        }
+    },
+
+    setGoalHours: async (hours) => {
+        try {
+            await AsyncStorage.setItem(KEYS.GOAL_HOURS, String(hours));
+        } catch (e) {
+            console.error('Error saving goal hours', e);
         }
     },
 
