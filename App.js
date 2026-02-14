@@ -100,6 +100,12 @@ export default function App() {
     const [refreshing, setRefreshing] = useState(false);
     const [isManualStop, setIsManualStop] = useState(false); // NEW: Manual Stop State
 
+    // Calendar Date Selection State
+    const [selectedDate, setSelectedDate] = useState(null); // null = live/today view
+    const [selectedDateTotal, setSelectedDateTotal] = useState(0);
+    const [selectedDateSessions, setSelectedDateSessions] = useState([]);
+    const [selectedWeekData, setSelectedWeekData] = useState([]);
+
     // Modal State
     const [modalVisible, setModalVisible] = useState(false);
     const [wifiNameInput, setWifiNameInput] = useState('');
@@ -333,6 +339,48 @@ export default function App() {
     };
 
 
+    // Handle calendar date selection
+    const handleDateSelect = async (dateString) => {
+        const todayStr = moment().format('YYYY-MM-DD');
+        if (dateString === todayStr || dateString === selectedDate) {
+            // Tapping today or same date again => return to live view
+            setSelectedDate(null);
+            setSelectedDateTotal(0);
+            setSelectedDateSessions([]);
+            setSelectedWeekData([]);
+            return;
+        }
+
+        setSelectedDate(dateString);
+
+        // Fetch that day's data
+        const dayTotal = await StorageService.getDurationForDate(dateString);
+        setSelectedDateTotal(dayTotal);
+        const daySessions = await StorageService.getSessionsForDate(dateString);
+        setSelectedDateSessions(daySessions);
+
+        // Compute that week's histogram (Mon-Fri containing the selected date)
+        const selected = moment(dateString);
+        const weekStart = selected.clone().startOf('isoWeek'); // Monday
+        const weekEnd = selected.clone().endOf('isoWeek'); // Sunday
+        const newHistory = await StorageService.getHistory();
+        const weekData = [];
+        for (let d = weekStart.clone(); d.isSameOrBefore(weekEnd); d.add(1, 'days')) {
+            const dayOfWeek = d.day();
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                const dk = d.format('YYYY-MM-DD');
+                const duration = newHistory[dk] || 0;
+                weekData.push({
+                    day: d.format('ddd'),
+                    date: dk,
+                    duration: duration,
+                    hours: (duration / 1000 / 60 / 60).toFixed(1)
+                });
+            }
+        }
+        setSelectedWeekData(weekData);
+    };
+
     // TESTING: Generate mock weekly data for histogram
     const generateMockWeeklyData = async () => {
         const mockHistory = {};
@@ -488,10 +536,14 @@ export default function App() {
     };
 
     // Calculate totals
-    const totalMs = sessionDuration + todayTotal;
-    const totalHours = totalMs / (1000 * 60 * 60);
+    const isViewingHistory = selectedDate !== null;
+    const displayMs = isViewingHistory ? selectedDateTotal : (sessionDuration + todayTotal);
+    const totalMs = sessionDuration + todayTotal; // Keep live total for ring max
+    const totalHours = displayMs / (1000 * 60 * 60);
     const goalHours = 8.5;
     const isGoalReached = totalHours >= goalHours;
+    const displayWeekData = isViewingHistory ? selectedWeekData : weeklyData;
+    const displaySessions = isViewingHistory ? selectedDateSessions : todaySessions;
 
     const renderCalendarDay = ({ date, state }) => {
         const dateStr = date.dateString;
@@ -576,17 +628,47 @@ export default function App() {
                         </View>
                     </View>
 
+                    {/* Viewing History Banner */}
+                    {isViewingHistory && (
+                        <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: isDark ? 'rgba(33, 150, 243, 0.15)' : 'rgba(33, 150, 243, 0.1)',
+                            paddingVertical: 8,
+                            paddingHorizontal: 16,
+                            marginHorizontal: 20,
+                            marginBottom: 10,
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: 'rgba(33, 150, 243, 0.3)'
+                        }}>
+                            <Ionicons name="calendar-outline" size={16} color="#2196F3" />
+                            <Text style={{ color: '#2196F3', fontSize: 13, fontWeight: '600', marginLeft: 6, flex: 1 }}>
+                                Viewing: {moment(selectedDate).format('ddd, MMM D, YYYY')}
+                            </Text>
+                            <TouchableOpacity onPress={() => {
+                                setSelectedDate(null);
+                                setSelectedDateTotal(0);
+                                setSelectedDateSessions([]);
+                                setSelectedWeekData([]);
+                            }}>
+                                <Ionicons name="close-circle" size={20} color="#2196F3" />
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
                     {/* Circular Progress Section */}
                     <View style={styles.progressContainer}>
                         <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
                             <CircularProgress
-                                value={totalMs}
+                                value={displayMs}
                                 maxValue={30600000} // 8.5 hours in ms
                                 radius={RING_RADIUS} // Custom Radius based on Screen Width
                                 duration={100} // Fast animation
                                 progressValueColor={'transparent'}
                                 showProgressValue={false}
-                                activeStrokeColor={isGoalReached ? '#2196F3' : '#FF9800'}
+                                activeStrokeColor={isViewingHistory ? '#2196F3' : (isGoalReached ? '#2196F3' : '#FF9800')}
                                 inActiveStrokeColor={isDark ? '#333' : '#E0E0E0'}
                                 title={''}
                                 titleColor={'transparent'}
@@ -606,7 +688,7 @@ export default function App() {
                                     marginBottom: 4,
                                     letterSpacing: 1
                                 }}>
-                                    WORKED
+                                    {isViewingHistory ? moment(selectedDate).format('ddd, MMM D') : 'WORKED'}
                                 </Text>
                                 <Text style={{
                                     fontSize: RING_RADIUS * 0.28, // Responsive Font Size
@@ -615,16 +697,17 @@ export default function App() {
                                     fontVariant: ['tabular-nums']
                                 }}>
                                     {(() => {
-                                        const dur = moment.duration(totalMs);
+                                        const dur = moment.duration(displayMs);
                                         const h = Math.floor(dur.asHours());
                                         const m = dur.minutes();
+                                        if (isViewingHistory) return `${h}h ${m}m`;
                                         const s = dur.seconds();
                                         return `${h}h ${m}m ${s}s`;
                                     })()}
                                 </Text>
 
                                 {/* Start and End Times */}
-                                {todaySessions.length > 0 && (
+                                {displaySessions.length > 0 && (
                                     <View style={{
                                         flexDirection: 'row',
                                         justifyContent: 'space-between',
@@ -648,7 +731,7 @@ export default function App() {
                                                 color: '#4CAF50',
                                                 fontVariant: ['tabular-nums']
                                             }}>
-                                                {moment(todaySessions[0].start).format('h:mm A')}
+                                                {moment(displaySessions[0].start).format('h:mm A')}
                                             </Text>
                                         </View>
 
@@ -668,7 +751,7 @@ export default function App() {
                                                 color: '#FF9800',
                                                 fontVariant: ['tabular-nums']
                                             }}>
-                                                {moment(todaySessions[todaySessions.length - 1].end || Date.now()).format('h:mm A')}
+                                                {moment(displaySessions[displaySessions.length - 1].end || Date.now()).format('h:mm A')}
                                             </Text>
                                         </View>
                                     </View>
@@ -767,22 +850,22 @@ export default function App() {
 
 
                     {/* Weekly Histogram - Weekdays Only */}
-                    {weeklyData.length > 0 && (
+                    {displayWeekData.length > 0 && (
                         <View style={[styles.sectionContainer, { backgroundColor: colors.card, marginBottom: 15, paddingVertical: 15 }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, paddingHorizontal: 20 }}>
                                 <Ionicons name="bar-chart-outline" size={20} color={colors.accent} />
                                 <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 8 }]}>
-                                    This Week (Weekdays)
+                                    {isViewingHistory ? `Week of ${moment(selectedDate).startOf('isoWeek').format('MMM D')}` : 'This Week (Weekdays)'}
                                 </Text>
                             </View>
 
                             <View style={{ paddingHorizontal: 20 }}>
                                 {/* Bar Chart */}
                                 <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 120, marginBottom: 10 }}>
-                                    {weeklyData.map((item, index) => {
-                                        const maxHours = Math.max(...weeklyData.map(d => parseFloat(d.hours)), 8);
+                                    {displayWeekData.map((item, index) => {
+                                        const maxHours = Math.max(...displayWeekData.map(d => parseFloat(d.hours)), 8);
                                         const height = (parseFloat(item.hours) / maxHours) * 80;
-                                        const isToday = item.date === moment().format('YYYY-MM-DD');
+                                        const isToday = isViewingHistory ? (item.date === selectedDate) : (item.date === moment().format('YYYY-MM-DD'));
 
                                         return (
                                             <View key={index} style={{ flex: 1, alignItems: 'center', marginHorizontal: 2 }}>
@@ -851,7 +934,7 @@ export default function App() {
                                     <View style={{ alignItems: 'center' }}>
                                         <Text style={{ fontSize: 11, color: colors.subText }}>Total</Text>
                                         <Text style={{ fontSize: 16, fontWeight: '700', color: '#4CAF50' }}>
-                                            {weeklyData.reduce((sum, d) => sum + parseFloat(d.hours), 0).toFixed(1)}h
+                                            {displayWeekData.reduce((sum, d) => sum + parseFloat(d.hours), 0).toFixed(1)}h
                                         </Text>
                                     </View>
                                     <View style={{ width: 1, backgroundColor: colors.divider }} />
@@ -859,7 +942,7 @@ export default function App() {
                                         <Text style={{ fontSize: 11, color: colors.subText }}>Average</Text>
                                         <Text style={{ fontSize: 16, fontWeight: '700', color: '#4CAF50' }}>
                                             {(() => {
-                                                const activeDays = weeklyData.filter(d => parseFloat(d.hours) > 0);
+                                                const activeDays = displayWeekData.filter(d => parseFloat(d.hours) > 0);
                                                 const total = activeDays.reduce((sum, d) => sum + parseFloat(d.hours), 0);
                                                 return activeDays.length > 0 ? (total / activeDays.length).toFixed(1) : '0.0';
                                             })()}h
@@ -870,18 +953,18 @@ export default function App() {
                         </View>
                     )}
 
-                    {/* Today's Sessions Timeline */}
-                    {todaySessions.length > 0 && (
+                    {/* Sessions Timeline */}
+                    {displaySessions.length > 0 && (
                         <View style={[styles.sectionContainer, { backgroundColor: colors.card, marginBottom: 15, paddingVertical: 20 }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingHorizontal: 20 }}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                     <Ionicons name="time-outline" size={22} color={colors.accent} />
                                     <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 8 }]}>
-                                        Today's Sessions
+                                        {isViewingHistory ? `Sessions — ${moment(selectedDate).format('MMM D')}` : "Today's Sessions"}
                                     </Text>
                                 </View>
                                 <Text style={{ fontSize: 12, color: colors.subText, fontWeight: '600' }}>
-                                    {todaySessions.filter(s => s.duration >= 60000).length} {todaySessions.filter(s => s.duration >= 60000).length === 1 ? 'session' : 'sessions'}
+                                    {displaySessions.filter(s => s.duration >= 60000).length} {displaySessions.filter(s => s.duration >= 60000).length === 1 ? 'session' : 'sessions'}
                                 </Text>
                             </View>
 
@@ -891,7 +974,7 @@ export default function App() {
                                 showsVerticalScrollIndicator={false}
                                 nestedScrollEnabled={true}
                             >
-                                {todaySessions
+                                {displaySessions
                                     .filter(session => session.duration >= 60000) // Only show sessions >= 1 minute
                                     .map((session, index) => {
                                         const durationSec = Math.floor(session.duration / 1000);
@@ -981,8 +1064,13 @@ export default function App() {
                                 monthTextColor: colors.text,
                                 indicatorColor: colors.accent,
                             }}
-                            dayComponent={renderCalendarDay}
+                            dayComponent={(props) => (
+                                <TouchableOpacity onPress={() => handleDateSelect(props.date.dateString)}>
+                                    {renderCalendarDay(props)}
+                                </TouchableOpacity>
+                            )}
                             enableSwipeMonths={true}
+                            markedDates={selectedDate ? { [selectedDate]: { selected: true, selectedColor: '#2196F3' } } : {}}
                         />
                     </View>
 
