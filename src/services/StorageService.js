@@ -7,6 +7,7 @@ const KEYS = {
     CURRENT_SESSION: 'CURRENT_SESSION',
     HISTORY: 'HISTORY',
     SESSIONS: 'SESSIONS', // Individual session details with start/end times
+    GOAL_HOURS: 'GOAL_HOURS', // Daily Goal in Hours
 };
 
 export const StorageService = {
@@ -24,6 +25,24 @@ export const StorageService = {
             }
         } catch (e) {
             console.error('Error saving SSID', e);
+        }
+    },
+
+    // --- Goal Configuration ---
+    setGoalHours: async (hours) => {
+        try {
+            await AsyncStorage.setItem(KEYS.GOAL_HOURS, String(hours));
+        } catch (e) {
+            console.error(e);
+        }
+    },
+
+    getGoalHours: async () => {
+        try {
+            const hours = await AsyncStorage.getItem(KEYS.GOAL_HOURS);
+            return hours ? parseFloat(hours) : 8.5; // Default 8.5
+        } catch (e) {
+            return 8.5;
         }
     },
 

@@ -99,6 +99,7 @@ export default function App() {
     const [weeklyData, setWeeklyData] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
     const [isManualStop, setIsManualStop] = useState(false); // NEW: Manual Stop State
+    const [goalHours, setGoalHours] = useState(8.5); // Default Goal
 
     // Calendar Date Selection State
     const [selectedDate, setSelectedDate] = useState(null); // null = live/today view
@@ -109,6 +110,7 @@ export default function App() {
     // Modal State
     const [modalVisible, setModalVisible] = useState(false);
     const [wifiNameInput, setWifiNameInput] = useState('');
+    const [goalInput, setGoalInput] = useState('8.5');
     const [capturedSSID, setCapturedSSID] = useState(null); // Captured SSID
     const [modalTitle, setModalTitle] = useState('Rename Wi-Fi Name'); // Dynamic Title
 
@@ -160,7 +162,14 @@ export default function App() {
         scheduleDailyReminder();
 
         const storedSSID = await StorageService.getTargetSSID();
-        setTargetSSID(storedSSID);
+        if (storedSSID) {
+            setTargetSSID(storedSSID);
+        }
+
+        // Load Goal
+        const storedGoal = await StorageService.getGoalHours();
+        setGoalHours(storedGoal);
+
         await refreshTotals(); // Load all data including weekly histogram and sessions
 
         // TESTING: Generate mock weekly data for histogram
@@ -315,6 +324,17 @@ export default function App() {
         const newHistory = await StorageService.getHistory();
         setHistory(newHistory);
         const sessions = await StorageService.getTodaySessions();
+
+        // Check for active session and append it to display list
+        const activeSession = await StorageService.getCurrentSession();
+        if (activeSession) {
+            sessions.push({
+                start: activeSession.start,
+                end: null, // Still active
+                duration: Date.now() - activeSession.start
+            });
+        }
+
         setTodaySessions(sessions);
 
         // Calculate weekly data (weekdays only)
@@ -415,6 +435,7 @@ export default function App() {
     // Generic open modal function
     const handleOpenModal = (isInitialSetup) => {
         setWifiNameInput("");
+        setGoalInput(String(goalHours));
         setModalTitle(isInitialSetup ? "Set Name for Office Wi-Fi" : "Rename Wi-Fi Name");
         setModalVisible(true);
     };
@@ -435,7 +456,10 @@ export default function App() {
     };
 
     const handleRenameSetup = () => {
-        handleOpenModal(false); // Rename Context
+        setWifiNameInput(targetSSID || ""); // Pre-fill current name
+        setGoalInput(String(goalHours));
+        setModalTitle("Rename Wi-Fi & Goal");
+        setModalVisible(true);
     };
 
     const handleResetWiFi = () => {
@@ -477,6 +501,11 @@ export default function App() {
 
         // Save friendly name and captured SSID
         await StorageService.setTargetSSID(wifiNameInput.trim(), capturedSSID);
+
+        // Save Goal
+        const newGoal = parseFloat(goalInput) || 8.5;
+        await StorageService.setGoalHours(newGoal);
+        setGoalHours(newGoal);
 
         setTargetSSID(wifiNameInput.trim());
         setModalVisible(false);
@@ -542,7 +571,7 @@ export default function App() {
     const displayMs = isViewingHistory ? selectedDateTotal : (sessionDuration + todayTotal);
     const totalMs = sessionDuration + todayTotal; // Keep live total for ring max
     const totalHours = displayMs / (1000 * 60 * 60);
-    const goalHours = 8.5;
+    // goalHours is now from state
     const isGoalReached = totalHours >= goalHours;
     const displayWeekData = isViewingHistory ? selectedWeekData : weeklyData;
     const displaySessions = isViewingHistory ? selectedDateSessions : todaySessions;
@@ -566,7 +595,7 @@ export default function App() {
                     {date.day}
                 </Text>
                 {hasData && (
-                    <Text style={{ fontSize: 9, color: isViewingHistory ? '#FF9800' : (h >= 8 ? '#4CAF50' : '#FF9800'), fontWeight: 'bold' }}>
+                    <Text style={{ fontSize: 9, color: isViewingHistory ? '#FF9800' : (h >= goalHours ? '#4CAF50' : '#FF9800'), fontWeight: 'bold' }}>
                         {displayTime}
                     </Text>
                 )}
@@ -664,8 +693,8 @@ export default function App() {
                     <View style={styles.progressContainer}>
                         <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
                             <CircularProgress
-                                value={Math.min(displayMs, 30600000)}
-                                maxValue={30600000} // 8.5 hours in ms
+                                value={Math.min(displayMs, goalHours * 60 * 60 * 1000)}
+                                maxValue={goalHours * 60 * 60 * 1000} // Dynamic Goal
                                 radius={RING_RADIUS} // Custom Radius based on Screen Width
                                 duration={100} // Fast animation
                                 progressValueColor={'transparent'}
@@ -1130,6 +1159,18 @@ export default function App() {
                             value={wifiNameInput}
                             onChangeText={setWifiNameInput}
                             autoFocus={true}
+                        />
+
+                        <Text style={{ color: colors.subText, fontSize: 12, marginBottom: 6, marginTop: 15 }}>
+                            Daily Goal (Hours)
+                        </Text>
+                        <TextInput
+                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text }]}
+                            placeholder="e.g. 8.5"
+                            placeholderTextColor={colors.subText}
+                            value={goalInput}
+                            onChangeText={setGoalInput}
+                            keyboardType="numeric"
                         />
 
                         <View style={styles.modalButtons}>
