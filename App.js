@@ -988,14 +988,19 @@ export default function App() {
                             </View>
 
 
+
                             <ScrollView
                                 style={{ maxHeight: 220 }}
                                 showsVerticalScrollIndicator={false}
                                 nestedScrollEnabled={true}
                             >
-                                {displaySessions
-                                    .filter(session => session.duration >= 60000) // Only show sessions >= 1 minute
-                                    .map((session, index) => {
+                                {(() => {
+                                    // Filter valid sessions and sort chronologically
+                                    const visibleSessions = displaySessions
+                                        .filter(session => session.duration >= 60000)
+                                        .sort((a, b) => a.start - b.start);
+
+                                    return visibleSessions.map((session, index) => {
                                         const durationSec = Math.floor(session.duration / 1000);
                                         const hours = Math.floor(durationSec / 3600);
                                         const mins = Math.floor((durationSec % 3600) / 60);
@@ -1011,61 +1016,143 @@ export default function App() {
                                         // Check if this is an ongoing session (no end time or end time is in future)
                                         const isOngoing = !session.end || session.end > Date.now();
 
-                                        return (
-                                            <View
-                                                key={index}
-                                                style={{
-                                                    marginHorizontal: 20,
-                                                    marginBottom: 8,
-                                                    padding: 10,
-                                                    borderRadius: 10,
-                                                    backgroundColor: isDark
-                                                        ? (isViewingHistory ? 'rgba(255, 152, 0, 0.08)' : 'rgba(76, 175, 80, 0.08)')
-                                                        : (isViewingHistory ? 'rgba(255, 152, 0, 0.05)' : 'rgba(76, 175, 80, 0.05)'),
-                                                    borderLeftWidth: 4,
-                                                    borderLeftColor: isViewingHistory ? '#FF9800' : (isOngoing ? '#FF9800' : '#4CAF50'),
-                                                    flexDirection: 'row',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between'
-                                                }}
-                                            >
-                                                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
-                                                    <View style={{
-                                                        width: 8,
-                                                        height: 8,
-                                                        borderRadius: 4,
-                                                        backgroundColor: isViewingHistory ? '#FF9800' : (isOngoing ? '#FF9800' : '#4CAF50'),
-                                                        marginRight: 8
-                                                    }} />
-                                                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-                                                        {moment(session.start).format('h:mm A')}
-                                                    </Text>
-                                                    <Text style={{ marginHorizontal: 6, color: colors.subText, fontSize: 13 }}>—</Text>
-                                                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-                                                        {isOngoing ? 'Now' : moment(session.end).format('h:mm A')}
-                                                    </Text>
-                                                </View>
+                                        const isLast = index === visibleSessions.length - 1;
+                                        let breakElement = null;
 
-                                                <View style={{
-                                                    backgroundColor: isDark
-                                                        ? (isViewingHistory ? 'rgba(255, 152, 0, 0.15)' : 'rgba(76, 175, 80, 0.15)')
-                                                        : (isViewingHistory ? 'rgba(255, 152, 0, 0.12)' : 'rgba(76, 175, 80, 0.12)'),
-                                                    paddingHorizontal: 10,
-                                                    paddingVertical: 5,
-                                                    borderRadius: 6,
-                                                    borderWidth: 1,
-                                                    borderColor: isViewingHistory ? 'rgba(255, 152, 0, 0.25)' : 'rgba(76, 175, 80, 0.25)',
-                                                    minWidth: 60,
-                                                    alignItems: 'center'
-                                                }}>
-                                                    <Text style={{ fontSize: 12, fontWeight: '700', color: isViewingHistory ? '#FF9800' : '#4CAF50' }}>
-                                                        {durationText}
-                                                    </Text>
+                                        // Calculate break time if there is a next session
+                                        if (!isLast) {
+                                            const nextSession = visibleSessions[index + 1];
+                                            const breakStart = session.end; // End of current session
+                                            const breakEnd = nextSession.start; // Start of next session
+
+                                            // Only show break if times are valid and break is positive
+                                            if (breakStart && breakEnd && breakEnd > breakStart) {
+                                                const breakDurationMs = breakEnd - breakStart;
+                                                const breakMins = Math.floor(breakDurationMs / 60000);
+
+                                                if (breakMins >= 1) {
+                                                    const bHours = Math.floor(breakMins / 60);
+                                                    const bMins = breakMins % 60;
+                                                    const breakText = bHours > 0 ? `${bHours}h ${bMins}m` : `${bMins}m`;
+
+                                                    breakElement = (
+                                                        <View style={{
+                                                            flexDirection: 'row',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            marginVertical: 8,
+                                                            opacity: 0.7
+                                                        }}>
+                                                            <View style={{ height: 1, backgroundColor: colors.subText, flex: 1, marginRight: 10, opacity: 0.3 }} />
+                                                            <Ionicons name="cafe-outline" size={14} color={colors.subText} />
+                                                            <Text style={{ fontSize: 12, color: colors.subText, marginLeft: 6, fontWeight: '600' }}>
+                                                                Break: {breakText}
+                                                            </Text>
+                                                            <View style={{ height: 1, backgroundColor: colors.subText, flex: 1, marginLeft: 10, opacity: 0.3 }} />
+                                                        </View>
+                                                    );
+                                                }
+                                            }
+                                        }
+
+                                        return (
+                                            <React.Fragment key={index}>
+                                                <View
+                                                    style={{
+                                                        marginHorizontal: 20,
+                                                        marginBottom: breakElement ? 0 : 8, // Reduce margin if break follows
+                                                        padding: 10,
+                                                        borderRadius: 10,
+                                                        backgroundColor: isDark
+                                                            ? (isViewingHistory ? 'rgba(255, 152, 0, 0.08)' : 'rgba(76, 175, 80, 0.08)')
+                                                            : (isViewingHistory ? 'rgba(255, 152, 0, 0.05)' : 'rgba(76, 175, 80, 0.05)'),
+                                                        borderLeftWidth: 4,
+                                                        borderLeftColor: isViewingHistory ? '#FF9800' : (isOngoing ? '#FF9800' : '#4CAF50'),
+                                                        flexDirection: 'row',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between'
+                                                    }}
+                                                >
+                                                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+                                                        <View style={{
+                                                            width: 8,
+                                                            height: 8,
+                                                            borderRadius: 4,
+                                                            backgroundColor: isViewingHistory ? '#FF9800' : (isOngoing ? '#FF9800' : '#4CAF50'),
+                                                            marginRight: 8
+                                                        }} />
+                                                        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                                                            {moment(session.start).format('h:mm A')}
+                                                        </Text>
+                                                        <Text style={{ marginHorizontal: 6, color: colors.subText, fontSize: 13 }}>—</Text>
+                                                        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                                                            {isOngoing ? 'Now' : moment(session.end).format('h:mm A')}
+                                                        </Text>
+                                                    </View>
+
+                                                    <View style={{
+                                                        backgroundColor: isDark
+                                                            ? (isViewingHistory ? 'rgba(255, 152, 0, 0.15)' : 'rgba(76, 175, 80, 0.15)')
+                                                            : (isViewingHistory ? 'rgba(255, 152, 0, 0.12)' : 'rgba(76, 175, 80, 0.12)'),
+                                                        paddingHorizontal: 10,
+                                                        paddingVertical: 5,
+                                                        borderRadius: 6,
+                                                        borderWidth: 1,
+                                                        borderColor: isViewingHistory ? 'rgba(255, 152, 0, 0.25)' : 'rgba(76, 175, 80, 0.25)',
+                                                        minWidth: 60,
+                                                        alignItems: 'center'
+                                                    }}>
+                                                        <Text style={{ fontSize: 12, fontWeight: '700', color: isViewingHistory ? '#FF9800' : '#4CAF50' }}>
+                                                            {durationText}
+                                                        </Text>
+                                                    </View>
                                                 </View>
-                                            </View>
+                                                {breakElement}
+                                            </React.Fragment>
                                         );
-                                    })}
+                                    });
+                                })()}
                             </ScrollView>
+
+                            {/* Total Break Footer */}
+                            {(() => {
+                                const visibleSessions = displaySessions
+                                    .filter(session => session.duration >= 60000)
+                                    .sort((a, b) => a.start - b.start);
+
+                                let totalBreakMs = 0;
+                                for (let i = 0; i < visibleSessions.length - 1; i++) {
+                                    const end = visibleSessions[i].end;
+                                    const start = visibleSessions[i + 1].start;
+                                    if (end && start && start > end) {
+                                        totalBreakMs += (start - end);
+                                    }
+                                }
+
+                                if (totalBreakMs >= 60000) {
+                                    const breakMins = Math.floor(totalBreakMs / 60000);
+                                    const bHours = Math.floor(breakMins / 60);
+                                    const bMins = breakMins % 60;
+                                    const totalBreakText = bHours > 0 ? `${bHours}h ${bMins}m` : `${bMins}m`;
+
+                                    return (
+                                        <View style={{
+                                            marginTop: 10,
+                                            paddingTop: 10,
+                                            borderTopWidth: 1,
+                                            borderTopColor: colors.divider,
+                                            flexDirection: 'row',
+                                            justifyContent: 'flex-end',
+                                            paddingHorizontal: 20
+                                        }}>
+                                            <Text style={{ fontSize: 12, color: colors.subText, marginRight: 6 }}>Total Break:</Text>
+                                            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text }}>{totalBreakText}</Text>
+                                        </View>
+                                    );
+                                }
+                                return null;
+                            })()}
+
                         </View>
                     )}
 
