@@ -10,17 +10,31 @@ const KEYS = {
     GOAL_HOURS: 'GOAL_HOURS', // Configurable daily goal in hours (default 8.5)
 };
 
+// In-memory cache to reduce bridge calls
+const cache = {
+    TARGET_SSID: undefined,
+    RAW_SSID: undefined,
+    GOAL_HOURS: undefined,
+    IS_MANUAL_PAUSED: undefined,
+    CURRENT_SESSION: undefined,
+};
+
 export const StorageService = {
     // --- Target SSID (Display Name & Raw) ---
     setTargetSSID: async (name, rawSSID) => {
         try {
             if (!name) {
+                cache.TARGET_SSID = null;
+                cache.RAW_SSID = null;
                 await AsyncStorage.removeItem(KEYS.TARGET_SSID);
                 await AsyncStorage.removeItem(KEYS.RAW_SSID);
             } else {
+                cache.TARGET_SSID = name;
                 await AsyncStorage.setItem(KEYS.TARGET_SSID, name);
                 if (rawSSID) {
-                    await AsyncStorage.setItem(KEYS.RAW_SSID, rawSSID.replace(/^"|"$/g, '')); // Remove quotes if present
+                    const cleanSSID = rawSSID.replace(/^"|"$/g, '');
+                    cache.RAW_SSID = cleanSSID;
+                    await AsyncStorage.setItem(KEYS.RAW_SSID, cleanSSID); // Remove quotes if present
                 }
             }
         } catch (e) {
@@ -29,16 +43,22 @@ export const StorageService = {
     },
 
     getTargetSSID: async () => {
+        if (cache.TARGET_SSID !== undefined) return cache.TARGET_SSID;
         try {
-            return await AsyncStorage.getItem(KEYS.TARGET_SSID);
+            const val = await AsyncStorage.getItem(KEYS.TARGET_SSID);
+            cache.TARGET_SSID = val;
+            return val;
         } catch (e) {
             return null;
         }
     },
 
     getRawSSID: async () => {
+        if (cache.RAW_SSID !== undefined) return cache.RAW_SSID;
         try {
-            return await AsyncStorage.getItem(KEYS.RAW_SSID);
+            const val = await AsyncStorage.getItem(KEYS.RAW_SSID);
+            cache.RAW_SSID = val;
+            return val;
         } catch (e) {
             return null;
         }
@@ -46,6 +66,8 @@ export const StorageService = {
 
     clearTargetSSID: async () => {
         try {
+            cache.TARGET_SSID = null;
+            cache.RAW_SSID = null;
             await AsyncStorage.removeItem(KEYS.TARGET_SSID);
             await AsyncStorage.removeItem(KEYS.RAW_SSID);
         } catch (e) {
@@ -55,9 +77,12 @@ export const StorageService = {
 
     // --- Goal Hours (configurable daily target) ---
     getGoalHours: async () => {
+        if (cache.GOAL_HOURS !== undefined) return cache.GOAL_HOURS;
         try {
             const val = await AsyncStorage.getItem(KEYS.GOAL_HOURS);
-            return val !== null ? parseFloat(val) : 8.5; // Default 8.5 hours
+            const parsed = val !== null ? parseFloat(val) : 8.5;
+            cache.GOAL_HOURS = parsed;
+            return parsed; // Default 8.5 hours
         } catch (e) {
             return 8.5;
         }
@@ -65,6 +90,7 @@ export const StorageService = {
 
     setGoalHours: async (hours) => {
         try {
+            cache.GOAL_HOURS = hours;
             await AsyncStorage.setItem(KEYS.GOAL_HOURS, String(hours));
         } catch (e) {
             console.error('Error saving goal hours', e);
@@ -73,9 +99,12 @@ export const StorageService = {
 
     // NEW: Persistent Manual Pause
     getManualPause: async () => {
+        if (cache.IS_MANUAL_PAUSED !== undefined) return cache.IS_MANUAL_PAUSED;
         try {
             const val = await AsyncStorage.getItem('IS_MANUAL_PAUSED');
-            return val === 'true';
+            const boolVal = val === 'true';
+            cache.IS_MANUAL_PAUSED = boolVal;
+            return boolVal;
         } catch (e) {
             return false;
         }
@@ -83,6 +112,7 @@ export const StorageService = {
 
     setManualPause: async (isPaused) => {
         try {
+            cache.IS_MANUAL_PAUSED = isPaused;
             await AsyncStorage.setItem('IS_MANUAL_PAUSED', isPaused ? 'true' : 'false');
         } catch (e) {
             console.error(e);
@@ -94,6 +124,7 @@ export const StorageService = {
         try {
             const now = Date.now();
             const session = { start: now, lastActive: now };
+            cache.CURRENT_SESSION = session;
             await AsyncStorage.setItem(KEYS.CURRENT_SESSION, JSON.stringify(session));
             return session;
         } catch (e) {
@@ -103,10 +134,19 @@ export const StorageService = {
 
     updateSessionHeartbeat: async () => {
         try {
-            const json = await AsyncStorage.getItem(KEYS.CURRENT_SESSION);
-            if (json) {
-                const session = JSON.parse(json);
+            // Optimistic update from cache if available
+            let session = cache.CURRENT_SESSION;
+
+            if (!session) {
+                const json = await AsyncStorage.getItem(KEYS.CURRENT_SESSION);
+                if (json) {
+                    session = JSON.parse(json);
+                }
+            }
+
+            if (session) {
                 session.lastActive = Date.now();
+                cache.CURRENT_SESSION = session;
                 await AsyncStorage.setItem(KEYS.CURRENT_SESSION, JSON.stringify(session));
                 return session;
             }
@@ -120,10 +160,14 @@ export const StorageService = {
         if (StorageService._isEnding) return;
         StorageService._isEnding = true;
         try {
-            const json = await AsyncStorage.getItem(KEYS.CURRENT_SESSION);
-            if (json) {
-                const session = JSON.parse(json);
+            // Read from cache first
+            let session = cache.CURRENT_SESSION;
+            if (!session) {
+                const json = await AsyncStorage.getItem(KEYS.CURRENT_SESSION);
+                if (json) session = JSON.parse(json);
+            }
 
+            if (session) {
                 const now = Date.now();
                 session.lastActive = now;
                 const startDay = moment(session.start).format('YYYY-MM-DD');
@@ -161,6 +205,7 @@ export const StorageService = {
                     }
                 }
 
+                cache.CURRENT_SESSION = null;
                 await AsyncStorage.removeItem(KEYS.CURRENT_SESSION);
             }
         } catch (e) {
@@ -171,9 +216,12 @@ export const StorageService = {
     },
 
     getCurrentSession: async () => {
+        if (cache.CURRENT_SESSION !== undefined) return cache.CURRENT_SESSION;
         try {
             const json = await AsyncStorage.getItem(KEYS.CURRENT_SESSION);
-            return json ? JSON.parse(json) : null;
+            const session = json ? JSON.parse(json) : null;
+            cache.CURRENT_SESSION = session;
+            return session;
         } catch (e) {
             return null;
         }
