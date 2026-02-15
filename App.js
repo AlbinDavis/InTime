@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Text, View, TouchableOpacity, ScrollView, Alert, RefreshControl, useColorScheme, StatusBar, Platform, Linking, Modal, TextInput, Dimensions, SafeAreaView, AppState, StyleSheet } from 'react-native';
 import * as Network from 'expo-network';
 import * as Location from 'expo-location';
@@ -17,9 +17,12 @@ import { styles } from './src/styles/AppStyles';
 
 const BACKGROUND_TASK_NAME = 'BACKGROUND_WIFI_MONITOR';
 
-const { width } = Dimensions.get('window');
-// Dynamic Ring Size: 35% of screen width (e.g. 130px on iPhone 12, 112px on SE)
-const RING_RADIUS = width * 0.35;
+const { width, height } = Dimensions.get('window');
+// Dynamic Ring Size: 35% of screen width, but clamped for tablets
+const RING_RADIUS = Math.min(width * 0.35, 160);
+
+// Font Size Conservation
+const clamp = (val, min, max) => Math.min(Math.max(val, min), max);
 
 // Configure Notifications
 Notifications.setNotificationHandler({
@@ -401,8 +404,16 @@ export default function App() {
 
 
 
+    const isProcessing = useRef(false);
+
     const tick = async () => {
-        await checkNetworkAndSession();
+        if (isProcessing.current) return;
+        isProcessing.current = true;
+        try {
+            await checkNetworkAndSession();
+        } finally {
+            isProcessing.current = false;
+        }
     };
 
     // Generic open modal function
@@ -720,12 +731,15 @@ export default function App() {
                                 }}>
                                     {isViewingHistory ? moment(selectedDate).format('ddd, MMM D') : 'WORKED'}
                                 </Text>
-                                <Text style={{
-                                    fontSize: RING_RADIUS * 0.28, // Responsive Font Size
-                                    fontWeight: 'bold',
-                                    color: colors.text,
-                                    fontVariant: ['tabular-nums']
-                                }}>
+                                <Text
+                                    adjustsFontSizeToFit
+                                    numberOfLines={1}
+                                    style={{
+                                        fontSize: clamp(RING_RADIUS * 0.28, 24, 60), // Clamp font size
+                                        fontWeight: 'bold',
+                                        color: colors.text,
+                                        fontVariant: ['tabular-nums']
+                                    }}>
                                     {(() => {
                                         const dur = moment.duration(displayMs);
                                         const h = Math.floor(dur.asHours());
