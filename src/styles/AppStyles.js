@@ -122,7 +122,6 @@ export const styles = StyleSheet.create({
     },
     modalContent: {
         width: '85%',
-        maxWidth: 400, // Prevent modal from getting too wide on tablets
         borderRadius: 24,
         padding: 28,
         shadowColor: "#000",
