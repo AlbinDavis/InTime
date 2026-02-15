@@ -12,21 +12,24 @@ import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import { StorageService } from './src/services/StorageService';
 import { NetworkService } from './src/services/NetworkService';
-import WidgetService from './src/services/WidgetService';
 import { styles } from './src/styles/AppStyles';
+import * as BackgroundFetch from 'expo-background-fetch';
 
 const BACKGROUND_TASK_NAME = 'BACKGROUND_WIFI_MONITOR';
+const BACKGROUND_REMINDER_TASK = 'BACKGROUND_REMINDER_TASK';
 
 const { width } = Dimensions.get('window');
 // Dynamic Ring Size: 35% of screen width (e.g. 130px on iPhone 12, 112px on SE)
 const RING_RADIUS = width * 0.35;
 
 // Configure Notifications
+// Configure Notifications
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
         shouldShowAlert: true,
         shouldPlaySound: true,
         shouldSetBadge: false,
+        priority: Notifications.AndroidNotificationPriority.MAX,
     }),
 });
 
@@ -164,7 +167,9 @@ export default function App() {
         // Permission dialogs are handled automatically by the system
 
         await Notifications.requestPermissionsAsync();
-        scheduleDailyReminder();
+
+        // Register Background Tasks
+        registerBackgroundFetch();
 
         const storedSSID = await StorageService.getTargetSSID();
         setTargetSSID(storedSSID);
@@ -176,19 +181,54 @@ export default function App() {
         await refreshTotals(); // Load all data including weekly histogram and sessions
     };
 
-    const scheduleDailyReminder = async () => {
-        await Notifications.cancelAllScheduledNotificationsAsync();
-        await Notifications.scheduleNotificationAsync({
-            content: {
-                title: "Good Morning! ☀️",
-                body: "Enable Wi-Fi to start tracking your office hours.",
-            },
-            trigger: {
-                hour: 9,
-                minute: 0,
-                repeats: true,
-            },
-        });
+    const registerBackgroundFetch = async () => {
+        try {
+            await TaskManager.defineTask(BACKGROUND_REMINDER_TASK, async () => {
+                const now = moment();
+                // Only run check between 9 AM and 10 AM to act as a "Daily" trigger
+                // And prevent spamming all day.
+                if (now.hour() === 9) {
+                    const todayStr = now.format('YYYY-MM-DD');
+                    const lastReminded = await StorageService.getItem('LAST_REMINDER_DATE');
+
+                    if (lastReminded === todayStr) {
+                        return BackgroundFetch.BackgroundFetchResult.NoData;
+                    }
+
+                    // Check Conditions
+                    const { Location } = require('expo-location'); // Late import
+                    const { NetworkService } = require('./src/services/NetworkService'); // Late import
+
+                    const locEnabled = await Location.hasServicesEnabledAsync();
+                    const wifiEnabled = await NetworkService.isConnectedToWifi(); // Basic check
+
+                    if (!locEnabled || !wifiEnabled) {
+                        await Notifications.scheduleNotificationAsync({
+                            content: {
+                                title: "⚠️ Check Settings",
+                                body: `Tracking paused! ${!locEnabled ? 'Location' : 'Wi-Fi'} is OFF. Enable to track office hours.`,
+                                priority: Notifications.AndroidNotificationPriority.MAX,
+                                sound: true,
+                            },
+                            trigger: null, // Immediate
+                        });
+
+                        // Mark as done for today
+                        await StorageService.setItem('LAST_REMINDER_DATE', todayStr);
+                        return BackgroundFetch.BackgroundFetchResult.NewData;
+                    }
+                }
+                return BackgroundFetch.BackgroundFetchResult.NoData;
+            });
+
+            await BackgroundFetch.registerTaskAsync(BACKGROUND_REMINDER_TASK, {
+                minimumInterval: 60 * 15, // 15 minutes
+                stopOnTerminate: false, // Continue on Android after kill
+                startOnBoot: true,
+            });
+        } catch (err) {
+            console.log("BG Register failed:", err);
+        }
     };
 
     const onRefresh = useCallback(async () => {

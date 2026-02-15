@@ -52,6 +52,11 @@
             ],
             "useNextNotificationsApi": true
         },
+        "notification": {
+            "icon": "./assets/icon.png",
+            "color": "#4CAF50",
+            "iosDisplayInForeground": true
+        },
         "web": {
             "favicon": "./assets/favicon.png"
         },
